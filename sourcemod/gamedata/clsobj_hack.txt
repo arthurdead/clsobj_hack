@@ -1,0 +1,118 @@
+"Games"
+{
+	"tf"
+	{
+		"Offsets"
+		{
+			"CTFWeaponBuilder::Precache::OBJ_LAST"
+			{
+				"linux" "86"
+			}
+			"CTFPlayer::ManageBuilderWeapons::OBJ_LAST"
+			{
+				"linux" "272"
+			}
+			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1"
+			{
+				"linux" "48"
+			}
+			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2"
+			{
+				"linux" "125"
+			}
+		}
+		"Signatures"
+		{
+			"LoadObjectInfos"
+			{
+				"library" "server"
+				"linux" "@_Z15LoadObjectInfosP15IBaseFileSystem"
+			}
+			"GetObjectInfo"
+			{
+				"library" "server"
+				"linux" "@_Z13GetObjectInfoi"
+			}
+			"GetBuildableId"
+			{
+				"library" "server"
+				"linux" "@_Z14GetBuildableIdPKc"
+			}
+			"CTFPlayerClassDataMgr::Init"
+			{
+				"library" "server"
+				"linux" "@_ZN21CTFPlayerClassDataMgr4InitEv"
+			}
+			"GetPlayerClassData"
+			{
+				"library" "server"
+				"linux" "@_Z18GetPlayerClassDataj"
+			}
+			"CTFPlayerClassDataMgr::AddAdditionalPlayerDeathSounds"
+			{
+				"library" "server"
+				"linux" "@_ZN21CTFPlayerClassDataMgr30AddAdditionalPlayerDeathSoundsEv"
+			}
+			"CTFWeaponBuilder::Precache"
+			{
+				"library" "server"
+				"linux" "@_ZN16CTFWeaponBuilder8PrecacheEv"
+			}
+			"CBaseObject::CanBeUpgraded"
+			{
+				"library" "server"
+				"linux" "@_ZNK11CBaseObject13CanBeUpgradedEv"
+			}
+			"CTFPlayer::ManageBuilderWeapons"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer20ManageBuilderWeaponsEP19TFPlayerClassData_t"
+			}
+			"CTFPlayer::CanBuild"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer8CanBuildEii"
+			}
+			"ClassCanBuild"
+			{
+				"library" "server"
+				"linux" "@_Z13ClassCanBuildii"
+			}
+			"CTFPlayer::PrecachePlayerModels"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer20PrecachePlayerModelsEv"
+			}
+			"CTFWeaponBuilder::CTFWeaponBuilder"
+			{
+				"library" "server"
+				"linux" "@_ZN16CTFWeaponBuilderC1Ev"
+			}
+			"CTFWeaponBuilder::CanBuildObjectType"
+			{
+				"library" "server"
+				"linux" "@_ZN16CTFWeaponBuilder18CanBuildObjectTypeEi"
+			}
+			"CTFWeaponBuilder::SetObjectTypeAsBuildable"
+			{
+				"library" "server"
+				"linux" "@_ZN16CTFWeaponBuilder24SetObjectTypeAsBuildableEi"
+			}
+			"CTFWeaponBuilder::SetSubType"
+			{
+				"library" "server"
+				"linux" "@_ZN16CTFWeaponBuilder10SetSubTypeEi"
+			}
+			"WriteUsercmd"
+			{
+				"library" "server"
+				"linux" "@_Z12WriteUsercmdP8bf_writePK8CUserCmdS3_"
+			}
+			"ReadUsercmd"
+			{
+				"library" "server"
+				"linux" "@_Z11ReadUsercmdP7bf_readP8CUserCmdS2_"
+			}
+		}
+	}
+}
