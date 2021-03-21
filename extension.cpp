@@ -38,6 +38,7 @@
 #include <vector>
 #include <mathlib/IceKey.H>
 #include <unordered_map>
+#include <icvar.h>
 
 enum PLAYER_ANIM {};
 
@@ -56,6 +57,8 @@ SMEXT_LINK(&g_Sample);
 IGameConfig *g_pGameConf = nullptr;
 
 IFileSystem *filesystem = nullptr;
+ICvar *icvar = nullptr;
+CGlobalVars *gpGlobals = nullptr;
 
 CDetour *pLoadObjectInfos = nullptr;
 CDetour *pGetObjectInfo = nullptr;
@@ -176,7 +179,13 @@ public:
 	
 	int m_nRepresentative = OBJ_LAST;
 	
-	CObjectInfo *clone();
+	int m_nBaseHealth = 100;
+	
+	int m_nIndex = OBJ_LAST;
+	
+	bool m_bCustom = false;
+	
+	class CObjectInfoCustom *clone();
 };
 
 char* ReadAndAllocString( const char *pValue )
@@ -192,10 +201,101 @@ char* ReadAndAllocString( const char *pValue )
 }
 
 void UpdateObjectOffsets();
+void RemoveBuilderVars(int index);
 
-CObjectInfo *CObjectInfo::clone()
+struct ObjectDeleter
 {
-	CObjectInfo *ret = new CObjectInfo{m_pObjectName};
+	void operator()(CObjectInfo *ptr) const;
+};
+
+using ObjectUniquePtr = std::unique_ptr<CObjectInfo, ObjectDeleter>;
+
+class ObjectMap : private std::vector<ObjectUniquePtr>
+{
+public:
+	using base = std::vector<ObjectUniquePtr>;
+	
+	void add(CObjectInfo *pInfo, bool update = true)
+	{
+		pInfo->m_nIndex = base::size();
+		base::emplace_back(pInfo);
+		if(update) {
+			UpdateObjectOffsets();
+		}
+	}
+	
+	template <typename T>
+	void remove(T it);
+	
+	void clear(bool update = true)
+	{
+		base::clear();
+		if(update) {
+			UpdateObjectOffsets();
+		}
+	}
+	
+	using base::operator[];
+	using base::size;
+	using base::begin;
+	using base::end;
+} g_ObjectInfos;
+
+void UpdateBuilders();
+
+class CObjectInfoCustom : public CObjectInfo
+{
+public:
+	CObjectInfoCustom( const char *pObjectName )
+		: CObjectInfo{pObjectName}
+	{
+		m_bCustom = true;
+	}
+	
+	~CObjectInfoCustom()
+	{
+		RemoveBuilderVars(m_nIndex);
+		
+		if(freehndl) {
+			if(hndl != BAD_HANDLE) {
+				HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+				handlesys->FreeHandle(hndl, &security);
+			}
+		}
+		
+		UpdateBuilders();
+	}
+	
+	Handle_t hndl = BAD_HANDLE;
+	IPluginContext *pContext = nullptr;
+	bool freehndl = true;
+};
+
+template <typename T>
+void ObjectMap::remove(T it)
+{
+	auto it2 = it;
+	while(it2 != base::end()) {
+		--(*it2)->m_nIndex;
+		++it2;
+	}
+	base::erase(it);
+	UpdateObjectOffsets();
+}
+
+void ObjectDeleter::operator()(CObjectInfo *ptr) const
+{
+	if(ptr->m_bCustom) {
+		CObjectInfoCustom *pCustom = (CObjectInfoCustom *)ptr;
+		delete pCustom;
+	} else {
+		delete ptr;
+	}
+}
+
+CObjectInfoCustom *CObjectInfo::clone()
+{
+	CObjectInfoCustom *ret = new CObjectInfoCustom{m_pObjectName};
 	
 	ret->m_pClassName = ReadAndAllocString(m_pClassName);
 	ret->m_pStatusName = ReadAndAllocString(m_pStatusName);
@@ -237,6 +337,8 @@ CObjectInfo *CObjectInfo::clone()
 	ret->m_bRequiresOwnBuilder = m_bRequiresOwnBuilder;
 	
 	ret->m_nRepresentative = m_nRepresentative;
+	ret->m_nBaseHealth = m_nBaseHealth;
+	ret->m_bCustom = m_bCustom;
 	
 	return ret;
 }
@@ -258,13 +360,15 @@ CObjectInfo::CObjectInfo( const char *pObjectName )
 	m_SelectionSlot = -9999;
 	m_SelectionPosition = -9999;
 	m_bSolidToPlayerMovement = false;
+	m_bUseItemInfo = false;
 	m_pIconActive = NULL;
 	m_pIconInactive = NULL;
 	m_pIconMenu = NULL;
+	m_pHudStatusIcon = NULL;
 	m_pViewModel = NULL;
 	m_pPlayerModel = NULL;
 	m_iDisplayPriority = 0;
-	m_bVisibleInWeaponSelection = true;
+	m_bVisibleInWeaponSelection = false;
 	m_pExplodeSound = NULL;
 	m_pUpgradeSound = NULL;
 	m_pExplosionParticleEffect = NULL;
@@ -272,6 +376,7 @@ CObjectInfo::CObjectInfo( const char *pObjectName )
 	m_iBuildCount = 0;
 	m_iNumAltModes = 0;
 	m_bRequiresOwnBuilder = false;
+	m_iMetalToDropInGibs = -9999;
 	for(int i = 0; i < OBJECT_MAX_MODES; ++i) {
 		m_AltModes[i].pszStatusName = NULL;
 		m_AltModes[i].pszModeName = NULL;
@@ -364,8 +469,6 @@ static void SpewFileInfo( IBaseFileSystem *pFileSystem, const char *resourceName
 	}
 }
 
-std::vector<std::unique_ptr<CObjectInfo>> g_ObjectInfos;
-
 char* ReadAndAllocStringValue( KeyValues *pSub, const char *pName, const char *pFilename )
 {
 	const char *pValue = pSub->GetString( pName, NULL );
@@ -423,6 +526,7 @@ void LoadObjectInfo(CObjectInfo *pInfo, KeyValues *pSub, const char *pFilename)
 	pInfo->m_bRequiresOwnBuilder = pSub->GetBool( "RequiresOwnBuilder", 0 );
 	
 	pInfo->m_nRepresentative = pSub->GetInt( "Representative", OBJ_LAST );
+	pInfo->m_nBaseHealth = pSub->GetInt( "BaseHealth", 100 );
 	
 	// Read the other alternate object modes.
 	KeyValues *pAltModesKey = pSub->FindKey( "AltModes" );
@@ -453,12 +557,12 @@ void LoadObjectInfo(CObjectInfo *pInfo, KeyValues *pSub, const char *pFilename)
 
 void DoLoadObjectInfos(IBaseFileSystem *pFileSystem)
 {
-	g_ObjectInfos.clear();
+	g_ObjectInfos.clear(false);
 	
-	g_ObjectInfos.emplace_back(new CObjectInfo( "OBJ_DISPENSER" ));
-	g_ObjectInfos.emplace_back(new CObjectInfo( "OBJ_TELEPORTER" ));
-	g_ObjectInfos.emplace_back(new CObjectInfo( "OBJ_SENTRYGUN" ));
-	g_ObjectInfos.emplace_back(new CObjectInfo( "OBJ_ATTACHMENT_SAPPER" ));
+	g_ObjectInfos.add(new CObjectInfo( "OBJ_DISPENSER" ), false);
+	g_ObjectInfos.add(new CObjectInfo( "OBJ_TELEPORTER" ), false);
+	g_ObjectInfos.add(new CObjectInfo( "OBJ_SENTRYGUN" ), false);
+	g_ObjectInfos.add(new CObjectInfo( "OBJ_ATTACHMENT_SAPPER" ), false);
 	
 	const char *pFilename = "scripts/objects.txt";
 
@@ -496,14 +600,28 @@ void DoLoadObjectInfos(IBaseFileSystem *pFileSystem)
 		LoadObjectInfo(pInfo, pSub, pFilename);
 	}
 	
-	g_ObjectInfos.emplace_back(new CObjectInfo( "OBJ_LAST" ));
+	g_ObjectInfos.add(new CObjectInfo( "OBJ_LAST" ), false);
+	
+	g_ObjectInfos[OBJ_LAST]->m_nBaseHealth = 0;
 	
 	g_ObjectInfos[OBJ_DISPENSER]->m_nRepresentative = OBJ_DISPENSER;
+	g_ObjectInfos[OBJ_DISPENSER]->m_bVisibleInWeaponSelection = true;
+	g_ObjectInfos[OBJ_DISPENSER]->m_nBaseHealth = 150;
+	
 	g_ObjectInfos[OBJ_TELEPORTER]->m_nRepresentative = OBJ_TELEPORTER;
+	g_ObjectInfos[OBJ_TELEPORTER]->m_bVisibleInWeaponSelection = true;
+	g_ObjectInfos[OBJ_TELEPORTER]->m_nBaseHealth = 150;
+	
 	g_ObjectInfos[OBJ_SENTRYGUN]->m_nRepresentative = OBJ_SENTRYGUN;
+	g_ObjectInfos[OBJ_SENTRYGUN]->m_bVisibleInWeaponSelection = true;
+	g_ObjectInfos[OBJ_SENTRYGUN]->m_nBaseHealth = 150;
+	
 	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_nRepresentative = OBJ_ATTACHMENT_SAPPER;
+	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_bVisibleInWeaponSelection = true;
+	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_nBaseHealth = 100;
 	
 	UpdateObjectOffsets();
+	UpdateBuilders();
 
 	pValues->deleteThis();
 }
@@ -526,7 +644,8 @@ DETOUR_DECL_STATIC1(GetBuildableId, int , const char *, pszBuildableName )
 
 DETOUR_DECL_STATIC1(GetObjectInfo, const CObjectInfo*, int, iObject )
 {
-	return g_ObjectInfos[iObject].get();
+	const CObjectInfo *pInfo = g_ObjectInfos[iObject].get();
+	return pInfo;
 }
 
 #define MAX_PLAYERCLASS_SOUND_LENGTH	128
@@ -631,6 +750,10 @@ struct TFPlayerClassData_t
 	// sounds
 	char		m_szDeathSound[ DEATH_SOUND_TOTAL ][MAX_PLAYERCLASS_SOUND_LENGTH];
 
+	int m_nIndex = TF_CLASS_COUNT_ALL;
+	
+	bool m_bCustom = false;
+	
 	TFPlayerClassData_t();
 	const char *GetModelName() const;
 
@@ -640,12 +763,130 @@ struct TFPlayerClassData_t
 	void ParseData( KeyValues *pKeyValuesData );
 	void AddAdditionalPlayerDeathSounds( void );
 	
-	TFPlayerClassData_t *clone();
+	class TFPlayerClassDataCustom *clone();
 };
 
-TFPlayerClassData_t *TFPlayerClassData_t::clone()
+struct ClassDataDeleter
 {
-	TFPlayerClassData_t *ret = new TFPlayerClassData_t();
+	void operator()(TFPlayerClassData_t *ptr) const;
+};
+
+using ClassDataUniquePtr = std::unique_ptr<TFPlayerClassData_t, ClassDataDeleter>;
+
+void UpdateClassOffsets();
+
+class ClassDataMap : private std::vector<ClassDataUniquePtr>
+{
+public:
+	using base = std::vector<ClassDataUniquePtr>;
+	
+	void add(TFPlayerClassData_t *pInfo, bool update = true)
+	{
+		pInfo->m_nIndex = base::size();
+		base::emplace_back(pInfo);
+		if(update) {
+			UpdateClassOffsets();
+		}
+	}
+	
+	template <typename T>
+	void remove(T it);
+	
+	void clear(bool update = true)
+	{
+		base::clear();
+		if(update) {
+			UpdateClassOffsets();
+		}
+	}
+	
+	void resize(size_t size, bool update = true)
+	{
+		base::resize(size);
+		if(update) {
+			UpdateClassOffsets();
+		}
+	}
+	
+	using base::operator[];
+	using base::size;
+	using base::begin;
+	using base::end;
+} m_aTFPlayerClassData;
+
+void *CTFPlayerManageBuilderWeapons = nullptr;
+int m_iClassOffset = -1;
+
+void UpdateBuilders()
+{
+	if(!playerhelpers) {
+		return;
+	}
+	
+	for(int i = 1; i <= playerhelpers->GetNumPlayers(); ++i) {
+		IGamePlayer *pPlayer = playerhelpers->GetGamePlayer(i);
+		if(!pPlayer || !pPlayer->IsInGame()) {
+			continue;
+		}
+		
+		CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(pPlayer->GetIndex());
+		int m_iClass = *(int *)((unsigned char *)pEntity + m_iClassOffset);
+		TFPlayerClassData_t *pClassData = m_aTFPlayerClassData[m_iClass].get();
+		call_mfunc<void, CBaseEntity, TFPlayerClassData_t *>(pEntity, CTFPlayerManageBuilderWeapons, pClassData);
+	}
+}
+
+class TFPlayerClassDataCustom : public TFPlayerClassData_t
+{
+public:
+	TFPlayerClassDataCustom()
+		: TFPlayerClassData_t{}
+	{
+		m_bCustom = true;
+	}
+	
+	~TFPlayerClassDataCustom()
+	{
+		if(freehndl) {
+			if(hndl != BAD_HANDLE) {
+				HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+				handlesys->FreeHandle(hndl, &security);
+			}
+		}
+		
+		UpdateBuilders();
+	}
+	
+	Handle_t hndl = BAD_HANDLE;
+	IPluginContext *pContext = nullptr;
+	bool freehndl = true;
+};
+
+template <typename T>
+void ClassDataMap::remove(T it)
+{
+	auto it2 = it;
+	while(it2 != base::end()) {
+		--(*it2)->m_nIndex;
+		++it2;
+	}
+	base::erase(it);
+	UpdateClassOffsets();
+}
+
+void ClassDataDeleter::operator()(TFPlayerClassData_t *ptr) const
+{
+	if(ptr->m_bCustom) {
+		TFPlayerClassDataCustom *pCustom = (TFPlayerClassDataCustom *)ptr;
+		delete pCustom;
+	} else {
+		delete ptr;
+	}
+}
+
+TFPlayerClassDataCustom *TFPlayerClassData_t::clone()
+{
+	TFPlayerClassDataCustom *ret = new TFPlayerClassDataCustom();
 	
 	Q_strncpy( ret->m_szClassName, m_szClassName, TF_NAME_LENGTH );
 	Q_strncpy( ret->m_szModelName, m_szModelName, TF_NAME_LENGTH );
@@ -682,12 +923,10 @@ TFPlayerClassData_t *TFPlayerClassData_t::clone()
 	
 	ret->m_vecThirdPersonOffset = m_vecThirdPersonOffset;
 	
+	ret->m_bCustom = m_bCustom;
+	
 	return ret;
 }
-
-void UpdateClassOffsets();
-
-std::vector<std::unique_ptr<TFPlayerClassData_t>> m_aTFPlayerClassData;
 
 #define TF_CLASS_UNDEFINED_FILE			""
 #define TF_CLASS_SCOUT_FILE				"scripts/playerclasses/scout"
@@ -1074,11 +1313,9 @@ void TFPlayerClassData_t::ParseData( KeyValues *pKeyValuesData )
 
 bool DoClassDataMgrInit()
 {
-	m_aTFPlayerClassData.clear();
+	m_aTFPlayerClassData.clear(false);
 	
-	m_aTFPlayerClassData.resize(TF_CLASS_COUNT_ALL);
-	
-	UpdateClassOffsets();
+	m_aTFPlayerClassData.resize(TF_CLASS_COUNT_ALL, false);
 	
 	// Special case the undefined class.
 	m_aTFPlayerClassData[TF_CLASS_UNDEFINED].reset(new TFPlayerClassData_t{});
@@ -1095,6 +1332,8 @@ bool DoClassDataMgrInit()
 		pClassData = m_aTFPlayerClassData[iClass].get();
 		pClassData->Parse( s_aPlayerClassFiles[iClass] );
 	}
+	
+	UpdateClassOffsets();
 	
 	return true;
 }
@@ -1159,13 +1398,28 @@ DETOUR_DECL_MEMBER0(CTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds, void)
 	}
 }
 
+ConVar *tf_cheapobjects = nullptr;
+
 bool Sample::SDK_OnMetamodLoad(ISmmAPI *ismm, char *error, size_t maxlen, bool late)
 {
+	gpGlobals = ismm->GetCGlobals();
+	GET_V_IFACE_ANY(GetEngineFactory, engine, IVEngineServer, INTERFACEVERSION_VENGINESERVER)
 	GET_V_IFACE_CURRENT(GetEngineFactory, filesystem, IFileSystem, FILESYSTEM_INTERFACE_VERSION)
+	GET_V_IFACE_CURRENT(GetEngineFactory, icvar, ICvar, CVAR_INTERFACE_VERSION);
+	g_pCVar = icvar;
+	ConVar_Register(0, this);
+	
+	tf_cheapobjects = g_pCVar->FindVar("tf_cheapobjects");
 	
 	DoLoadObjectInfos(filesystem);
 	DoClassDataMgrInit();
 	
+	return true;
+}
+
+bool Sample::RegisterConCommandBase(ConCommandBase *pCommand)
+{
+	META_REGCVAR(pCommand);
 	return true;
 }
 
@@ -1204,8 +1458,8 @@ void LoadExtraObjects()
 			{
 				const char *name = pSub->GetName();
 				
-				g_ObjectInfos.emplace_back(new CObjectInfo{name});
-				CObjectInfo *pInfo = g_ObjectInfos.back().get();
+				CObjectInfo *pInfo = new CObjectInfo{name};
+				g_ObjectInfos.add(pInfo, false);
 
 				LoadObjectInfo(pInfo, pSub, pFilename);
 			}
@@ -1216,6 +1470,7 @@ void LoadExtraObjects()
 	}
 	
 	UpdateObjectOffsets();
+	UpdateBuilders();
 }
 
 void LoadExtraClasses()
@@ -1249,9 +1504,10 @@ void LoadExtraClasses()
 				continue;
 			}
 			
-			m_aTFPlayerClassData.emplace_back(new TFPlayerClassData_t{});
-			TFPlayerClassData_t *pClassData = m_aTFPlayerClassData.back().get();
+			TFPlayerClassData_t *pClassData = new TFPlayerClassData_t{};
 			pClassData->ParseData( pValues );
+			
+			m_aTFPlayerClassData.add(pClassData, false);
 			
 			pValues->deleteThis();
 		}
@@ -1259,6 +1515,7 @@ void LoadExtraClasses()
 	}
 	
 	UpdateClassOffsets();
+	UpdateBuilders();
 }
 
 static cell_t CObjectInfoFind(IPluginContext *pContext, const cell_t *params)
@@ -1299,58 +1556,32 @@ static cell_t CObjectInfoGet(IPluginContext *pContext, const cell_t *params)
 	return (cell_t)g_ObjectInfos[params[1]].get();
 }
 
-static cell_t CObjectInfoRemoveByIndex(IPluginContext *pContext, const cell_t *params)
-{
-	if(params[1] < 0 || params[1] >= g_ObjectInfos.size()) {
-		return pContext->ThrowNativeError("Invalid Index %i", params[1]);
-	}
-	
-	g_ObjectInfos.erase(g_ObjectInfos.begin() + params[1]);
-	
-	UpdateObjectOffsets();
-	
-	return 0;
-}
-
-static cell_t CObjectInfoRemoveByName(IPluginContext *pContext, const cell_t *params)
-{
-	char *name = nullptr;
-	pContext->LocalToString(params[1], &name);
-	
-	auto it = g_ObjectInfos.begin();
-	while(it != g_ObjectInfos.end()) {
-		if(Q_stricmp((*it)->m_pObjectName, name) == 0) {
-			g_ObjectInfos.erase(it);
-			break;
-		}
-		++it;
-	}
-	
-	UpdateObjectOffsets();
-	
-	return 0;
-}
+HandleType_t objinfo_handle = 0;
+HandleType_t classdata_handle = 0;
 
 static cell_t CObjectInfoCloneByName(IPluginContext *pContext, const cell_t *params)
 {
 	char *name = nullptr;
 	pContext->LocalToString(params[1], &name);
 	
-	cell_t ret = 0;
-	
 	auto it = g_ObjectInfos.begin();
 	while(it != g_ObjectInfos.end()) {
 		if(Q_stricmp((*it)->m_pObjectName, name) == 0) {
-			g_ObjectInfos.emplace_back((*it)->clone());
-			ret = (cell_t)g_ObjectInfos.back().get();
-			break;
+			CObjectInfoCustom *pInfo = (*it)->clone();
+			g_ObjectInfos.add(pInfo);
+			
+			Handle_t hndl = handlesys->CreateHandle(objinfo_handle, pInfo, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+			pInfo->hndl = hndl;
+			pInfo->pContext = pContext;
+			
+			UpdateBuilders();
+			
+			return hndl;
 		}
 		++it;
 	}
 	
-	UpdateObjectOffsets();
-	
-	return ret;
+	return BAD_HANDLE;
 }
 
 static cell_t CObjectInfoCloneByIndex(IPluginContext *pContext, const cell_t *params)
@@ -1359,11 +1590,16 @@ static cell_t CObjectInfoCloneByIndex(IPluginContext *pContext, const cell_t *pa
 		return pContext->ThrowNativeError("Invalid Index %i", params[1]);
 	}
 	
-	g_ObjectInfos.emplace_back(g_ObjectInfos[params[1]].get()->clone());
+	CObjectInfoCustom *pInfo = g_ObjectInfos[params[1]]->clone();
+	g_ObjectInfos.add(pInfo);
 	
-	UpdateObjectOffsets();
+	Handle_t hndl = handlesys->CreateHandle(objinfo_handle, pInfo, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+	pInfo->hndl = hndl;
+	pInfo->pContext = pContext;
 	
-	return (cell_t)g_ObjectInfos.back().get();
+	UpdateBuilders();
+	
+	return hndl;
 }
 
 static cell_t TFPlayerClassData_tFind(IPluginContext *pContext, const cell_t *params)
@@ -1404,58 +1640,29 @@ static cell_t TFPlayerClassData_tGet(IPluginContext *pContext, const cell_t *par
 	return (cell_t)m_aTFPlayerClassData[params[1]].get();
 }
 
-static cell_t TFPlayerClassData_tRemoveByIndex(IPluginContext *pContext, const cell_t *params)
-{
-	if(params[1] < 0 || params[1] >= m_aTFPlayerClassData.size()) {
-		return pContext->ThrowNativeError("Invalid Index %i", params[1]);
-	}
-	
-	m_aTFPlayerClassData.erase(m_aTFPlayerClassData.begin() + params[1]);
-	
-	UpdateClassOffsets();
-	
-	return 0;
-}
-
-static cell_t TFPlayerClassData_tRemoveByName(IPluginContext *pContext, const cell_t *params)
-{
-	char *name = nullptr;
-	pContext->LocalToString(params[1], &name);
-	
-	auto it = m_aTFPlayerClassData.begin();
-	while(it != m_aTFPlayerClassData.end()) {
-		if(Q_stricmp((*it)->m_szClassName, name) == 0) {
-			m_aTFPlayerClassData.erase(it);
-			break;
-		}
-		++it;
-	}
-	
-	UpdateClassOffsets();
-	
-	return 0;
-}
-
 static cell_t TFPlayerClassData_tCloneByName(IPluginContext *pContext, const cell_t *params)
 {
 	char *name = nullptr;
 	pContext->LocalToString(params[1], &name);
 	
-	cell_t ret = 0;
-	
 	auto it = m_aTFPlayerClassData.begin();
 	while(it != m_aTFPlayerClassData.end()) {
 		if(Q_stricmp((*it)->m_szClassName, name) == 0) {
-			m_aTFPlayerClassData.emplace_back((*it)->clone());
-			ret = (cell_t)m_aTFPlayerClassData.back().get();
-			break;
+			TFPlayerClassDataCustom *pClassData = (*it)->clone();
+			m_aTFPlayerClassData.add(pClassData);
+			
+			Handle_t hndl = handlesys->CreateHandle(classdata_handle, pClassData, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+			pClassData->hndl = hndl;
+			pClassData->pContext = pContext;
+			
+			UpdateBuilders();
+			
+			return hndl;
 		}
 		++it;
 	}
 	
-	UpdateClassOffsets();
-	
-	return ret;
+	return BAD_HANDLE;
 }
 
 static cell_t TFPlayerClassData_tCloneByIndex(IPluginContext *pContext, const cell_t *params)
@@ -1464,11 +1671,16 @@ static cell_t TFPlayerClassData_tCloneByIndex(IPluginContext *pContext, const ce
 		return pContext->ThrowNativeError("Invalid Index %i", params[1]);
 	}
 	
-	m_aTFPlayerClassData.emplace_back(m_aTFPlayerClassData[params[1]].get()->clone());
+	TFPlayerClassDataCustom *pClassData = m_aTFPlayerClassData[params[1]]->clone();
+	m_aTFPlayerClassData.add(pClassData);
 	
-	UpdateClassOffsets();
+	Handle_t hndl = handlesys->CreateHandle(classdata_handle, pClassData, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+	pClassData->hndl = hndl;
+	pClassData->pContext = pContext;
 	
-	return (cell_t)m_aTFPlayerClassData.back().get();
+	UpdateBuilders();
+	
+	return hndl;
 }
 
 static cell_t TFPlayerClassData_tGetString(IPluginContext *pContext, const cell_t *params)
@@ -1493,6 +1705,13 @@ static cell_t TFPlayerClassData_tGetString(IPluginContext *pContext, const cell_
 	}
 	
 	return 0;
+}
+
+static cell_t TFPlayerClassData_tIndexget(IPluginContext *pContext, const cell_t *params)
+{
+	TFPlayerClassData_t *pInfo = (TFPlayerClassData_t *)params[1];
+	
+	return pInfo->m_nIndex;
 }
 
 static cell_t CObjectInfoGetString(IPluginContext *pContext, const cell_t *params)
@@ -1570,7 +1789,14 @@ static cell_t CObjectInfoGetString(IPluginContext *pContext, const cell_t *param
 
 static cell_t TFPlayerClassData_tSetString(IPluginContext *pContext, const cell_t *params)
 {
-	TFPlayerClassData_t *pInfo = (TFPlayerClassData_t *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	TFPlayerClassDataCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], classdata_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1595,9 +1821,30 @@ static cell_t TFPlayerClassData_tSetString(IPluginContext *pContext, const cell_
 	return 0;
 }
 
+static cell_t TFPlayerClassDataCustomBaseGet(IPluginContext *pContext, const cell_t *params)
+{
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	TFPlayerClassDataCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], classdata_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
+	
+	return (cell_t)pInfo;
+}
+
 static cell_t CObjectInfoSetString(IPluginContext *pContext, const cell_t *params)
 {
-	CObjectInfo *pInfo = (CObjectInfo *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	CObjectInfoCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], objinfo_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1717,9 +1964,30 @@ static cell_t CObjectInfoSetString(IPluginContext *pContext, const cell_t *param
 	return 0;
 }
 
+static cell_t CObjectInfoCustomBaseGet(IPluginContext *pContext, const cell_t *params)
+{
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	CObjectInfoCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], objinfo_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
+	
+	return (cell_t)pInfo;
+}
+
 static cell_t CObjectInfoSetFloat(IPluginContext *pContext, const cell_t *params)
 {
-	CObjectInfo *pInfo = (CObjectInfo *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	CObjectInfoCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], objinfo_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1739,7 +2007,14 @@ static cell_t CObjectInfoSetFloat(IPluginContext *pContext, const cell_t *params
 
 static cell_t TFPlayerClassData_tSetFloat(IPluginContext *pContext, const cell_t *params)
 {
-	TFPlayerClassData_t *pInfo = (TFPlayerClassData_t *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	TFPlayerClassDataCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], classdata_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1770,7 +2045,13 @@ static cell_t CObjectInfoGetFloat(IPluginContext *pContext, const cell_t *params
 		return sp_ftoc(pInfo->m_flBuildTime);
 	}
 	
-	return 0;
+	return sp_ftoc(0.0f);
+}
+
+static cell_t CObjectInfoIndexget(IPluginContext *pContext, const cell_t *params)
+{
+	CObjectInfo *pInfo = (CObjectInfo *)params[1];
+	return pInfo->m_nIndex;
 }
 
 static cell_t TFPlayerClassData_tGetFloat(IPluginContext *pContext, const cell_t *params)
@@ -1786,12 +2067,19 @@ static cell_t TFPlayerClassData_tGetFloat(IPluginContext *pContext, const cell_t
 		return sp_ftoc(pInfo->m_vecThirdPersonOffset[params[3]]);
 	}
 	
-	return 0;
+	return sp_ftoc(0.0f);
 }
 
 static cell_t CObjectInfoSetInt(IPluginContext *pContext, const cell_t *params)
 {
-	CObjectInfo *pInfo = (CObjectInfo *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	CObjectInfoCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], objinfo_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1828,6 +2116,8 @@ static cell_t CObjectInfoSetInt(IPluginContext *pContext, const cell_t *params)
 		pInfo->m_bRequiresOwnBuilder = params[3];
 	} else if(Q_stricmp(name, "m_nRepresentative") == 0) {
 		pInfo->m_nRepresentative = params[3];
+	} else if(Q_stricmp(name, "m_nBaseHealth") == 0) {
+		pInfo->m_nBaseHealth = params[3];
 	}
 	
 	return 0;
@@ -1835,7 +2125,14 @@ static cell_t CObjectInfoSetInt(IPluginContext *pContext, const cell_t *params)
 
 static cell_t TFPlayerClassData_tSetInt(IPluginContext *pContext, const cell_t *params)
 {
-	TFPlayerClassData_t *pInfo = (TFPlayerClassData_t *)params[1];
+	HandleSecurity security(pContext->GetIdentity(), myself->GetIdentity());
+	
+	TFPlayerClassDataCustom *pInfo = nullptr;
+	HandleError err = handlesys->ReadHandle(params[1], classdata_handle, &security, (void **)&pInfo);
+	if(err != HandleError_None)
+	{
+		return pContext->ThrowNativeError("Invalid Handle %x (error: %d)", params[1], err);
+	}
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
@@ -1852,6 +2149,7 @@ static cell_t TFPlayerClassData_tSetInt(IPluginContext *pContext, const cell_t *
 		pInfo->m_aAmmoMax[params[4]] = params[3];
 	} else if(Q_stricmp(name, "m_aBuildable") == 0) {
 		pInfo->m_aBuildable[params[4]] = params[3];
+		UpdateBuilders();
 	} else if(Q_stricmp(name, "m_bDontDoAirwalk") == 0) {
 		pInfo->m_bDontDoAirwalk = params[3];
 	} else if(Q_stricmp(name, "m_bDontDoNewJump") == 0) {
@@ -1902,6 +2200,8 @@ static cell_t CObjectInfoGetInt(IPluginContext *pContext, const cell_t *params)
 		return pInfo->m_bRequiresOwnBuilder;
 	} else if(Q_stricmp(name, "m_nRepresentative") == 0) {
 		return pInfo->m_nRepresentative;
+	} else if(Q_stricmp(name, "m_nBaseHealth") == 0) {
+		return pInfo->m_nBaseHealth;
 	}
 	
 	return 0;
@@ -1947,28 +2247,6 @@ static cell_t CObjectInfoCount(IPluginContext *pContext, const cell_t *params)
 	return g_ObjectInfos.size();
 }
 
-static cell_t TFPlayerClassData_tClone(IPluginContext *pContext, const cell_t *params)
-{
-	TFPlayerClassData_t *pInfo = (TFPlayerClassData_t *)params[1];
-	
-	m_aTFPlayerClassData.emplace_back(pInfo->clone());
-	
-	UpdateClassOffsets();
-	
-	return (cell_t)m_aTFPlayerClassData.back().get();
-}
-
-static cell_t CObjectInfoClone(IPluginContext *pContext, const cell_t *params)
-{
-	CObjectInfo *pInfo = (CObjectInfo *)params[1];
-	
-	g_ObjectInfos.emplace_back(pInfo->clone());
-	
-	UpdateObjectOffsets();
-	
-	return (cell_t)g_ObjectInfos.back().get();
-}
-
 static cell_t CObjectInfoCreate(IPluginContext *pContext, const cell_t *params)
 {
 	KeyValues *pSub = g_pSM->ReadKeyValuesHandle(params[1], nullptr, false);
@@ -1978,14 +2256,17 @@ static cell_t CObjectInfoCreate(IPluginContext *pContext, const cell_t *params)
 	
 	const char *name = pSub->GetName();
 	
-	g_ObjectInfos.emplace_back(new CObjectInfo{name});
-	CObjectInfo *pInfo = g_ObjectInfos.back().get();
-
+	CObjectInfoCustom *pInfo = new CObjectInfoCustom{name};
 	LoadObjectInfo(pInfo, pSub, "");
+	g_ObjectInfos.add(pInfo);
 	
-	UpdateObjectOffsets();
+	Handle_t hndl = handlesys->CreateHandle(objinfo_handle, pInfo, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+	pInfo->hndl = hndl;
+	pInfo->pContext = pContext;
 	
-	return (cell_t)pInfo;
+	UpdateBuilders();
+	
+	return hndl;
 }
 
 static cell_t TFPlayerClassData_tCreate(IPluginContext *pContext, const cell_t *params)
@@ -1995,21 +2276,46 @@ static cell_t TFPlayerClassData_tCreate(IPluginContext *pContext, const cell_t *
 		return pContext->ThrowNativeError("Invalid KV Handle");
 	}
 	
-	m_aTFPlayerClassData.emplace_back(new TFPlayerClassData_t{});
-	TFPlayerClassData_t *pClassData = m_aTFPlayerClassData.back().get();
+	TFPlayerClassDataCustom *pClassData = new TFPlayerClassDataCustom{};
 	pClassData->ParseData( pSub );
+	m_aTFPlayerClassData.add(pClassData);
 	
-	UpdateClassOffsets();
+	Handle_t hndl = handlesys->CreateHandle(classdata_handle, pClassData, pContext->GetIdentity(), myself->GetIdentity(), nullptr);
+	pClassData->hndl = hndl;
+	pClassData->pContext = pContext;
 	
-	return (cell_t)pClassData;
+	UpdateBuilders();
+	
+	return hndl;
 }
 
 struct builder_vars_t
 {
-	std::unordered_map<int, bool> m_aBuildableObjectTypes{};
+	std::unordered_map<int, int> m_aBuildableObjectTypes{};
 };
 
 std::unordered_map<void *, builder_vars_t> buildervarsmap{};
+
+void RemoveBuilderVars(int index)
+{
+	auto it1 = buildervarsmap.begin();
+	while(it1 != buildervarsmap.end()) {
+		auto &map1 = it1->second.m_aBuildableObjectTypes;
+		auto it2 = map1.begin();
+		while(it2 != map1.end()) {
+			if(it2->first == index) {
+				map1.erase(it2);
+				continue;
+			}
+			++it2;
+		}
+		if(map1.empty()) {
+			buildervarsmap.erase(it1);
+			continue;
+		}
+		++it1;
+	}
+}
 
 static cell_t BuilderGetNumBuildables(IPluginContext *pContext, const cell_t *params)
 {
@@ -2049,6 +2355,47 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 	}
 }
 
+static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_t *params)
+{
+	CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(params[1]);
+	if(!pEntity) {
+		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
+	}
+	
+	auto it = buildervarsmap.find(pEntity);
+	if(it != buildervarsmap.end()) {
+		auto &map = it->second.m_aBuildableObjectTypes;
+		auto it2 = map.begin();
+		while(it2 != map.end()) {
+			if(it2->second == params[2]) {
+				return it2->first;
+			}
+			++it2;
+		}
+	}
+	
+	return -1;
+}
+
+static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_t *params)
+{
+	CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(params[1]);
+	if(!pEntity) {
+		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
+	}
+	
+	auto it = buildervarsmap.find(pEntity);
+	if(it != buildervarsmap.end()) {
+		auto &map = it->second.m_aBuildableObjectTypes;
+		auto it2 = map.find(params[2]);
+		if(it2 != map.end()) {
+			return it2->second;
+		}
+	}
+	
+	return -1;
+}
+
 int m_aBuildableObjectTypesOffset = -1;
 
 static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
@@ -2072,42 +2419,171 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	}
 }
 
+static cell_t ManageBuilderWeaponsEx(IPluginContext *pContext, const cell_t *params)
+{
+	IGamePlayer *pPlayer = playerhelpers->GetGamePlayer(params[1]);
+	if(!pPlayer) {
+		return pContext->ThrowNativeError("Client index %d is invalid", params[1]);
+	} else if(!pPlayer->IsInGame()) {
+		return pContext->ThrowNativeError("Client %d is not in game", params[1]);
+	}
+	
+	CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(pPlayer->GetIndex());
+	TFPlayerClassData_t *pClassData = (TFPlayerClassData_t *)params[2];
+	call_mfunc<void, CBaseEntity, TFPlayerClassData_t *>(pEntity, CTFPlayerManageBuilderWeapons, pClassData);
+	return 0;
+}
+
+int m_iMaxHealthOffset = -1;
+int m_iHealthOffset = -1;
+
+void SetEdictStateChanged(CBaseEntity *pEntity, int offset);
+
+class CBaseEntity : public IServerEntity
+{
+public:
+	void SetHealth(int hp)
+	{
+		if(m_iHealthOffset == -1) {
+			sm_datatable_info_t info{};
+			datamap_t *pMap = gamehelpers->GetDataMap(this);
+			gamehelpers->FindDataMapInfo(pMap, "m_iHealth", &info);
+			m_iHealthOffset = info.actual_offset;
+		}
+		
+		*(int *)((unsigned char *)this + m_iHealthOffset) = hp;
+		SetEdictStateChanged(this, m_iHealthOffset);
+	}
+	
+	void SetMaxHealth(int hp)
+	{
+		if(m_iMaxHealthOffset == -1) {
+			sm_datatable_info_t info{};
+			datamap_t *pMap = gamehelpers->GetDataMap(this);
+			gamehelpers->FindDataMapInfo(pMap, "m_iMaxHealth", &info);
+			m_iMaxHealthOffset = info.actual_offset;
+		}
+		
+		*(int *)((unsigned char *)this + m_iMaxHealthOffset) = hp;
+		SetEdictStateChanged(this, m_iMaxHealthOffset);
+	}
+};
+
+void SetEdictStateChanged(CBaseEntity *pEntity, int offset)
+{
+	IServerNetworkable *pNet = pEntity->GetNetworkable();
+	if(!pNet) {
+		return;
+	}
+
+	edict_t *edict = pNet->GetEdict();
+	if(!edict) {
+		return;
+	}
+	
+	gamehelpers->SetEdictStateChanged(edict, offset);
+}
+
+SH_DECL_MANUALHOOK0_void(GenericDtor, 1, 0, 0)
+
+void *CBaseObjectCTOR = nullptr;
+
+SH_DECL_MANUALHOOK0(GetBaseHealth, 0, 0, 0, int)
+
+int m_iObjectTypeOffset = -1;
+int sizeofCBaseObject = -1;
+
+class CBaseObject : public CBaseEntity
+{
+public:
+	static CBaseObject *create(size_t size_modifier)
+	{
+		CBaseObject *bytes = (CBaseObject *)engine->PvAllocEntPrivateData(sizeofCBaseObject + size_modifier);
+		call_mfunc<void>(bytes, CBaseObjectCTOR);
+		SH_ADD_MANUALHOOK(GenericDtor, bytes, SH_MEMBER(bytes, &CBaseObject::dtor), false);
+		SH_ADD_MANUALHOOK(GetBaseHealth, bytes, SH_MEMBER(bytes, &CBaseObject::HookGetBaseHealth), false);
+		bytes->SetHealth(100);
+		bytes->SetMaxHealth(100);
+		return bytes;
+	}
+	
+	int GetObjectType()
+	{
+		return *(int *)((unsigned char *)this + m_iObjectTypeOffset);
+	}
+	
+	void dtor()
+	{
+		CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
+		
+		SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_MEMBER(this, &CBaseObject::dtor), false);
+		SH_REMOVE_MANUALHOOK(GetBaseHealth, pEntity, SH_MEMBER(this, &CBaseObject::HookGetBaseHealth), false);
+		
+		RETURN_META(MRES_IGNORED);
+	}
+	
+	int HookGetBaseHealth()
+	{
+		int m_iObjectType = GetObjectType();
+		if(m_iObjectType < 0 || m_iObjectType >= g_ObjectInfos.size()) {
+			RETURN_META_VALUE(MRES_SUPERCEDE, 100);
+		} else {
+			CObjectInfo *pInfo = g_ObjectInfos[m_iObjectType].get();
+			RETURN_META_VALUE(MRES_SUPERCEDE, pInfo->m_nBaseHealth);
+		}
+	}
+};
+
+static cell_t GetBaseObjectSize(IPluginContext *pContext, const cell_t *params)
+{
+	return sizeofCBaseObject;
+}
+
+static cell_t AllocateBaseObject(IPluginContext *pContext, const cell_t *params)
+{
+	return (cell_t)CBaseObject::create(params[1]);
+}
+
 static const sp_nativeinfo_t g_sNativesInfo[] =
 {
 	{"CObjectInfo.Find", CObjectInfoFind},
 	{"CObjectInfo.GetIndex", CObjectInfoGetIndex},
 	{"CObjectInfo.Get", CObjectInfoGet},
-	{"CObjectInfo.RemoveByName", CObjectInfoRemoveByName},
-	{"CObjectInfo.RemoveByIndex", CObjectInfoRemoveByIndex},
-	{"CObjectInfo.CloneByName", CObjectInfoCloneByName},
-	{"CObjectInfo.CloneByIndex", CObjectInfoCloneByIndex},
-	{"CObjectInfo.SetString", CObjectInfoSetString},
-	{"CObjectInfo.SetFloat", CObjectInfoSetFloat},
-	{"CObjectInfo.SetInt", CObjectInfoSetInt},
+	{"CObjectInfoCustom.CloneByName", CObjectInfoCloneByName},
+	{"CObjectInfoCustom.CloneByIndex", CObjectInfoCloneByIndex},
+	{"CObjectInfoCustom.SetString", CObjectInfoSetString},
+	{"CObjectInfoCustom.SetFloat", CObjectInfoSetFloat},
+	{"CObjectInfoCustom.SetInt", CObjectInfoSetInt},
 	{"CObjectInfo.GetString", CObjectInfoGetString},
 	{"CObjectInfo.GetFloat", CObjectInfoGetFloat},
 	{"CObjectInfo.GetInt", CObjectInfoGetInt},
 	{"CObjectInfo.Count", CObjectInfoCount},
-	{"CObjectInfo.Create", CObjectInfoCreate},
-	{"TFPlayerClassData_t.Find", TFPlayerClassData_tFind},
-	{"TFPlayerClassData_t.GetIndex", TFPlayerClassData_tGetIndex},
-	{"TFPlayerClassData_t.Get", TFPlayerClassData_tGet},
-	{"TFPlayerClassData_t.RemoveByName", TFPlayerClassData_tRemoveByName},
-	{"TFPlayerClassData_t.RemoveByIndex", TFPlayerClassData_tRemoveByIndex},
-	{"TFPlayerClassData_t.CloneByName", TFPlayerClassData_tCloneByName},
-	{"TFPlayerClassData_t.CloneByIndex", TFPlayerClassData_tCloneByIndex},
-	{"TFPlayerClassData_t.SetString", TFPlayerClassData_tSetString},
-	{"TFPlayerClassData_t.SetFloat", TFPlayerClassData_tSetFloat},
-	{"TFPlayerClassData_t.SetInt", TFPlayerClassData_tSetInt},
-	{"TFPlayerClassData_t.GetString", TFPlayerClassData_tGetString},
-	{"TFPlayerClassData_t.GetFloat", TFPlayerClassData_tGetFloat},
-	{"TFPlayerClassData_t.GetInt", TFPlayerClassData_tGetInt},
-	{"TFPlayerClassData_t.Count", TFPlayerClassData_tCount},
-	{"TFPlayerClassData_t.Clone", TFPlayerClassData_tClone},
-	{"TFPlayerClassData_t.Create", TFPlayerClassData_tCreate},
+	{"CObjectInfo.Index.get", CObjectInfoIndexget},
+	{"CObjectInfoCustom.Create", CObjectInfoCreate},
+	{"CObjectInfoCustom.BaseInfo.get", CObjectInfoCustomBaseGet},
+	{"TFPlayerClassData.Find", TFPlayerClassData_tFind},
+	{"TFPlayerClassData.GetIndex", TFPlayerClassData_tGetIndex},
+	{"TFPlayerClassData.Get", TFPlayerClassData_tGet},
+	{"TFPlayerClassDataCustom.CloneByName", TFPlayerClassData_tCloneByName},
+	{"TFPlayerClassDataCustom.CloneByIndex", TFPlayerClassData_tCloneByIndex},
+	{"TFPlayerClassDataCustom.SetString", TFPlayerClassData_tSetString},
+	{"TFPlayerClassDataCustom.SetFloat", TFPlayerClassData_tSetFloat},
+	{"TFPlayerClassDataCustom.SetInt", TFPlayerClassData_tSetInt},
+	{"TFPlayerClassData.GetString", TFPlayerClassData_tGetString},
+	{"TFPlayerClassData.GetFloat", TFPlayerClassData_tGetFloat},
+	{"TFPlayerClassData.GetInt", TFPlayerClassData_tGetInt},
+	{"TFPlayerClassData.Count", TFPlayerClassData_tCount},
+	{"TFPlayerClassData.Index.get", TFPlayerClassData_tIndexget},
+	{"TFPlayerClassDataCustom.Create", TFPlayerClassData_tCreate},
+	{"TFPlayerClassDataCustom.BaseData.get", TFPlayerClassDataCustomBaseGet},
 	{"BuilderGetNumBuildables", BuilderGetNumBuildables},
 	{"BuilderGetBuildableIndex", BuilderGetBuildableIndex},
 	{"BuilderIsBuildable", BuilderIsBuildable},
+	{"BuilderIndexByRepresentative", BuilderIndexByRepresentative},
+	{"BuilderRepresentativeByIndex", BuilderRepresentativeByIndex},
+	{"AllocateBaseObject", AllocateBaseObject},
+	{"GetBaseObjectSize", GetBaseObjectSize},
+	{"ManageBuilderWeaponsEx", ManageBuilderWeaponsEx},
 	{nullptr, nullptr},
 };
 
@@ -2116,7 +2592,6 @@ CDetour *pClassCanBuild = nullptr;
 #include <sourcehook/sh_memory.h>
 
 void *CTFWeaponBuilderPrecache = nullptr;
-void *CTFPlayerManageBuilderWeapons = nullptr;
 void *CTFPlayerCanBuild = nullptr;
 void *CTFPlayerPrecachePlayerModels = nullptr;
 
@@ -2124,6 +2599,7 @@ int CTFWeaponBuilderPrecacheOBJ_LAST = -1;
 int CTFPlayerManageBuilderWeaponsOBJ_LAST = -1;
 int CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1 = -1;
 int CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 = -1;
+int CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER = -1;
 
 bool g_bOffsetsInited = false;
 
@@ -2137,6 +2613,7 @@ void UpdateObjectOffsets()
 	
 	*(unsigned char *)((unsigned char *)CTFWeaponBuilderPrecache + CTFWeaponBuilderPrecacheOBJ_LAST) = size;
 	*(unsigned char *)((unsigned char *)CTFPlayerManageBuilderWeapons + CTFPlayerManageBuilderWeaponsOBJ_LAST) = size;
+	*(unsigned char *)((unsigned char *)CTFPlayerCanBuild + CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER) = size;
 }
 
 void UpdateClassOffsets()
@@ -2151,26 +2628,9 @@ void UpdateClassOffsets()
 	*(unsigned char *)((unsigned char *)CTFPlayerPrecachePlayerModels + CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2) = size;
 }
 
-DETOUR_DECL_STATIC2(ClassCanBuild, bool, int, iClass, int, iObjectType)
-{
-	if(iClass == TF_CLASS_ENGINEER) {
-		return true;
-	}
-	
-	for ( int i = 0; i < TF_PLAYER_BLUEPRINT_COUNT; i++ )
-	{
-		if ( m_aTFPlayerClassData[iClass]->m_aBuildable[i] == iObjectType )
-			return true;
-	}
-	
-	return false;
-}
-
 CDetour *pCTFWeaponBuilderCanBuildObjectType = nullptr;
 CDetour *pCTFWeaponBuilderSetObjectTypeAsBuildable = nullptr;
 CDetour *pCTFWeaponBuilderCTOR = nullptr;
-
-SH_DECL_MANUALHOOK0_void(GenericDtor, 0, 0, 0)
 
 void HookBuilderDtor()
 {
@@ -2202,23 +2662,14 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
 	if( iObjectType < OBJ_LAST ) {
 		value = *(bool *)((unsigned char *)this + m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
-		value = buildervarsmap[this].m_aBuildableObjectTypes[iObjectType];
+		auto &map = buildervarsmap[this].m_aBuildableObjectTypes;
+		value = (map.find(iObjectType) != map.end());
 	}
 	
 	return value;
 }
 
 void *CTFWeaponBuilderSetSubType = nullptr;
-
-class CBaseEntity : public IServerEntity {};
-
-void SetEdictStateChanged(CBaseEntity *pEntity, int offset)
-{
-	IServerNetworkable *pNet = pEntity->GetNetworkable();
-	edict_t *edict = pNet->GetEdict();
-	
-	gamehelpers->SetEdictStateChanged(edict, offset);
-}
 
 DETOUR_DECL_MEMBER1(CTFWeaponBuilderSetObjectTypeAsBuildable, void, int, iObjectType)
 {
@@ -2229,11 +2680,13 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderSetObjectTypeAsBuildable, void, int, iObject
 		*(bool *)((unsigned char *)this + m_aBuildableObjectTypesOffset + iObjectType) = true;
 		SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
-		buildervarsmap[this].m_aBuildableObjectTypes[iObjectType] = true;
-		
 		CObjectInfo *pInfo = g_ObjectInfos[iObjectType].get();
 		if(pInfo->m_nRepresentative != OBJ_LAST) {
+			buildervarsmap[this].m_aBuildableObjectTypes[iObjectType] = pInfo->m_nRepresentative;
+			
 			SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + pInfo->m_nRepresentative);
+		} else {
+			buildervarsmap[this].m_aBuildableObjectTypes[iObjectType] = -1;
 		}
 	}
 	
@@ -2485,8 +2938,6 @@ DETOUR_DECL_STATIC3(ReadUsercmd, void, bf_read *, buf, CUserCmd *, move, CUserCm
 	}
 }
 
-CDetour *pCTFPlayerCanBuild = nullptr;
-
 enum
 {
 	CB_CAN_BUILD,			// Player is allowed to build this object
@@ -2497,15 +2948,196 @@ enum
 	CB_UNKNOWN_OBJECT,		// Error message, tried to build unknown object
 };
 
+void Sample::OnHandleDestroy(HandleType_t type, void *object)
+{
+	if(type == objinfo_handle) {
+		CObjectInfoCustom *obj = (CObjectInfoCustom *)object;
+		obj->freehndl = false;
+		g_ObjectInfos.remove(g_ObjectInfos.begin() + obj->m_nIndex);
+	} else if(type == classdata_handle) {
+		TFPlayerClassDataCustom *obj = (TFPlayerClassDataCustom *)object;
+		obj->freehndl = false;
+		m_aTFPlayerClassData.remove(m_aTFPlayerClassData.begin() + obj->m_nIndex);
+	}
+}
+
+CDetour *pCTFPlayerClassSharedCanBuildObject = nullptr;
+
+int m_PlayerClassOffset = -1;
+int m_iClassLocalOffset = -1;
+
+IForward *ClassCanBuildObject = nullptr;
+
+CDetour *pCTFPlayerManageBuilderWeapons = nullptr;
+
+bool bInManageBuilderWeapons = false;
+int iLastObjectType = -1;
+
+DETOUR_DECL_MEMBER1(CTFPlayerManageBuilderWeapons, void, TFPlayerClassData_t *, pClassData)
+{
+	bInManageBuilderWeapons = true;
+	DETOUR_MEMBER_CALL(CTFPlayerManageBuilderWeapons)(pClassData);
+	bInManageBuilderWeapons = false;
+	iLastObjectType = -1;
+}
+
+CDetour *pCBaseObjectCanBeUpgraded = nullptr;
+
+CBaseEntity *pLastPlayer = nullptr;
+
+DETOUR_DECL_MEMBER1(CBaseObjectCanBeUpgraded, bool, CBaseEntity *, pPlayer)
+{
+	pLastPlayer = pPlayer;
+	bool ret = DETOUR_MEMBER_CALL(CBaseObjectCanBeUpgraded)(pPlayer);
+	pLastPlayer = nullptr;
+	return ret;
+}
+
+DETOUR_DECL_STATIC2(ClassCanBuild, bool, int, iClass, int, iObjectType)
+{
+	bool ret = false;
+	
+	for ( int i = 0; i < TF_PLAYER_BLUEPRINT_COUNT; i++ )
+	{
+		if ( m_aTFPlayerClassData[iClass]->m_aBuildable[i] == iObjectType ) {
+			ret = true;
+			break;
+		}
+	}
+	
+	ClassCanBuildObject->PushCell(pLastPlayer ? gamehelpers->EntityToBCompatRef(pLastPlayer) : -1);
+	ClassCanBuildObject->PushCell(iClass);
+	ClassCanBuildObject->PushCell(iObjectType);
+	cell_t can = ret;
+	ClassCanBuildObject->PushCellByRef(&can);
+	cell_t res = 0;
+	ClassCanBuildObject->Execute(&res);
+	
+	switch(res) {
+		case Pl_Changed: {
+			return can;
+		}
+		case Pl_Handled:
+		case Pl_Stop: {
+			return false;
+		}
+	}
+	
+	return ret;
+}
+
+DETOUR_DECL_MEMBER1(CTFPlayerClassSharedCanBuildObject, bool, int, iObjectType)
+{
+	if(bInManageBuilderWeapons) {
+		iLastObjectType = iObjectType;
+	}
+	
+	int m_iClass = *(int *)((unsigned char *)this + m_iClassLocalOffset);
+	CBaseEntity *pPlayer = (CBaseEntity *)((unsigned char *)this - m_PlayerClassOffset);
+	
+	ClassCanBuildObject->PushCell(gamehelpers->EntityToBCompatRef(pPlayer));
+	ClassCanBuildObject->PushCell(m_iClass);
+	ClassCanBuildObject->PushCell(iObjectType);
+	bool ret = DETOUR_MEMBER_CALL(CTFPlayerClassSharedCanBuildObject)(iObjectType);
+	cell_t can = ret;
+	ClassCanBuildObject->PushCellByRef(&can);
+	cell_t res = 0;
+	ClassCanBuildObject->Execute(&res);
+	
+	switch(res) {
+		case Pl_Changed: {
+			return can;
+		}
+		case Pl_Handled:
+		case Pl_Stop: {
+			return false;
+		}
+	}
+	
+	return ret;
+}
+
+CDetour *pCTFPlayerGetLoadoutItem = nullptr;
+
+enum loadout_positions_t
+{
+	LOADOUT_POSITION_INVALID = -1,
+
+	// Weapons & Equipment
+	LOADOUT_POSITION_PRIMARY = 0,
+	LOADOUT_POSITION_SECONDARY,
+	LOADOUT_POSITION_MELEE,
+	LOADOUT_POSITION_UTILITY,
+	LOADOUT_POSITION_BUILDING,
+	LOADOUT_POSITION_PDA,
+	LOADOUT_POSITION_PDA2,
+
+	// Wearables. If you add new wearable slots, make sure you add them to IsWearableSlot() below this.
+	LOADOUT_POSITION_HEAD,
+	LOADOUT_POSITION_MISC,
+
+	// other
+	LOADOUT_POSITION_ACTION,
+
+	// More wearables, yay!
+	LOADOUT_POSITION_MISC2,
+
+	// taunts
+	LOADOUT_POSITION_TAUNT,
+	LOADOUT_POSITION_TAUNT2,
+	LOADOUT_POSITION_TAUNT3,
+	LOADOUT_POSITION_TAUNT4,
+	LOADOUT_POSITION_TAUNT5,
+	LOADOUT_POSITION_TAUNT6,
+	LOADOUT_POSITION_TAUNT7,
+	LOADOUT_POSITION_TAUNT8,
+
+	CLASS_LOADOUT_POSITION_COUNT,
+};
+
+DETOUR_DECL_MEMBER3(CTFPlayerGetLoadoutItem, void *, int, iClass, int, iSlot, bool, bReportWhitelistFails)
+{
+	if(iLastObjectType != -1) {
+		if(g_ObjectInfos[iLastObjectType]->m_bRequiresOwnBuilder && iSlot == LOADOUT_POSITION_BUILDING) {
+			//iSlot = LOADOUT_POSITION_BUILDING2;
+		}
+		
+		return DETOUR_MEMBER_CALL(CTFPlayerGetLoadoutItem)(iClass, iSlot, bReportWhitelistFails);
+	} else {
+		return DETOUR_MEMBER_CALL(CTFPlayerGetLoadoutItem)(iClass, iSlot, bReportWhitelistFails);
+	}
+}
+
+CDetour *pCTFPlayerCanBuild = nullptr;
+
 DETOUR_DECL_MEMBER2(CTFPlayerCanBuild, int, int, iObjectType, int, iObjectMode)
 {
-	//TODO!!! actually fix this instead of a workaround
-	if(iObjectType > OBJ_LAST && iObjectType < g_ObjectInfos.size()) {
-		CObjectInfo *pInfo = g_ObjectInfos[ iObjectType ].get();
-		return DETOUR_MEMBER_CALL(CTFPlayerCanBuild)(pInfo->m_nRepresentative, iObjectMode);
-	} else {
-		return DETOUR_MEMBER_CALL(CTFPlayerCanBuild)(iObjectType, iObjectMode);
+	int ret = DETOUR_MEMBER_CALL(CTFPlayerCanBuild)(iObjectType, iObjectMode);
+	return ret;
+}
+
+CDetour *pInternalCalculateObjectCost = nullptr;
+
+DETOUR_DECL_STATIC1(InternalCalculateObjectCost, int, int, iObjectType)
+{
+#if 1
+	int ret = 0;
+	
+	if(!tf_cheapobjects->GetBool()) {
+		ret = g_ObjectInfos[iObjectType]->m_Cost;
 	}
+#else
+	int ret = DETOUR_STATIC_CALL(InternalCalculateObjectCost)(iObjectType);
+#endif
+	return ret;
+}
+
+CDetour *pCTFPlayerSharedCalculateObjectCost = nullptr;
+
+DETOUR_DECL_MEMBER2(CTFPlayerSharedCalculateObjectCost, int, CBaseEntity *, pBuilder, int, iObjectType)
+{
+	int ret = DETOUR_MEMBER_CALL(CTFPlayerSharedCalculateObjectCost)(pBuilder, iObjectType);
+	return ret;
 }
 
 bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
@@ -2544,8 +3176,23 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	pCTFWeaponBuilderCTOR = DETOUR_CREATE_MEMBER(CTFWeaponBuilderCTOR, "CTFWeaponBuilder::CTFWeaponBuilder")
 	pCTFWeaponBuilderCTOR->EnableDetour();
 	
+	pCTFPlayerClassSharedCanBuildObject = DETOUR_CREATE_MEMBER(CTFPlayerClassSharedCanBuildObject, "CTFPlayerClassShared::CanBuildObject")
+	pCTFPlayerClassSharedCanBuildObject->EnableDetour();
+	
+	pCTFPlayerGetLoadoutItem = DETOUR_CREATE_MEMBER(CTFPlayerGetLoadoutItem, "CTFPlayer::GetLoadoutItem")
+	pCTFPlayerGetLoadoutItem->EnableDetour();
+	
+	pCTFPlayerManageBuilderWeapons = DETOUR_CREATE_MEMBER(CTFPlayerManageBuilderWeapons, "CTFPlayer::ManageBuilderWeapons")
+	pCTFPlayerManageBuilderWeapons->EnableDetour();
+	
+	pCBaseObjectCanBeUpgraded = DETOUR_CREATE_MEMBER(CBaseObjectCanBeUpgraded, "CBaseObject::CanBeUpgraded")
+	pCBaseObjectCanBeUpgraded->EnableDetour();
+	
 	pCTFPlayerCanBuild = DETOUR_CREATE_MEMBER(CTFPlayerCanBuild, "CTFPlayer::CanBuild")
 	pCTFPlayerCanBuild->EnableDetour();
+	
+	pCTFPlayerSharedCalculateObjectCost = DETOUR_CREATE_MEMBER(CTFPlayerSharedCalculateObjectCost, "CTFPlayerShared::CalculateObjectCost")
+	pCTFPlayerSharedCalculateObjectCost->EnableDetour();
 	
 	pWriteUsercmd = DETOUR_CREATE_STATIC(WriteUsercmd, "WriteUsercmd")
 	pWriteUsercmd->EnableDetour();
@@ -2553,24 +3200,45 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	pReadUsercmd = DETOUR_CREATE_STATIC(ReadUsercmd, "ReadUsercmd")
 	pReadUsercmd->EnableDetour();
 	
+	pInternalCalculateObjectCost = DETOUR_CREATE_STATIC(InternalCalculateObjectCost, "InternalCalculateObjectCost")
+	pInternalCalculateObjectCost->EnableDetour();
+	
 	sm_sendprop_info_t info{};
 	gamehelpers->FindSendPropInfo("CTFWeaponBuilder", "m_aBuildableObjectTypes", &info);
 	m_aBuildableObjectTypesOffset = info.actual_offset;
+	
+	gamehelpers->FindSendPropInfo("CBaseObject", "m_iObjectType", &info);
+	m_iObjectTypeOffset = info.actual_offset;
+	
+	gamehelpers->FindSendPropInfo("CTFPlayer", "m_PlayerClass", &info);
+	m_PlayerClassOffset = info.actual_offset;
+	
+	gamehelpers->FindSendPropInfo("CTFPlayer", "m_iClass", &info);
+	m_iClassOffset = info.actual_offset;
+	m_iClassLocalOffset = m_iClassOffset - m_PlayerClassOffset;
+	
+	g_pGameConf->GetOffset("sizeof(CBaseObject)", &sizeofCBaseObject);
+	
+	int offset = -1;
+	g_pGameConf->GetOffset("CBaseObject::GetBaseHealth", &offset);
+	SH_MANUALHOOK_RECONFIGURE(GetBaseHealth, offset, 0, 0);
 	
 	g_pGameConf->GetOffset("CTFWeaponBuilder::Precache::OBJ_LAST", &CTFWeaponBuilderPrecacheOBJ_LAST);
 	g_pGameConf->GetOffset("CTFPlayer::ManageBuilderWeapons::OBJ_LAST", &CTFPlayerManageBuilderWeaponsOBJ_LAST);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2);
+	g_pGameConf->GetOffset("CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER", &CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER);
 	
 	g_pGameConf->GetMemSig("CTFWeaponBuilder::Precache", &CTFWeaponBuilderPrecache);
 	g_pGameConf->GetMemSig("CTFPlayer::ManageBuilderWeapons", &CTFPlayerManageBuilderWeapons);
 	g_pGameConf->GetMemSig("CTFPlayer::CanBuild", &CTFPlayerCanBuild);
 	g_pGameConf->GetMemSig("CTFPlayer::PrecachePlayerModels", &CTFPlayerPrecachePlayerModels);
 	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
+	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
 	
 	SourceHook::SetMemAccess(CTFWeaponBuilderPrecache, CTFWeaponBuilderPrecacheOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerManageBuilderWeapons, CTFPlayerManageBuilderWeaponsOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
-	SourceHook::SetMemAccess(CTFPlayerCanBuild, sizeof(void *), SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
+	SourceHook::SetMemAccess(CTFPlayerCanBuild, CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerPrecachePlayerModels, CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	
 	g_bOffsetsInited = true;
@@ -2582,6 +3250,11 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	LoadExtraClasses();
 	
 	sharesys->AddNatives(myself, g_sNativesInfo);
+	
+	ClassCanBuildObject = forwards->CreateForward("ClassCanBuildObject", ET_Event, 4, nullptr, Param_Cell, Param_Cell, Param_Cell, Param_CellByRef);
+	
+	objinfo_handle = handlesys->CreateType("CObjectInfo", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
+	classdata_handle = handlesys->CreateType("TFPlayerClassData", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
 	
 	sharesys->RegisterLibrary(myself, "clsobj_hack");
 	
@@ -2602,6 +3275,15 @@ void Sample::SDK_OnUnload()
 	pCTFWeaponBuilderCTOR->Destroy();
 	pWriteUsercmd->Destroy();
 	pReadUsercmd->Destroy();
+	pCTFPlayerClassSharedCanBuildObject->Destroy();
+	pCTFPlayerGetLoadoutItem->Destroy();
+	pCTFPlayerManageBuilderWeapons->Destroy();
+	pCBaseObjectCanBeUpgraded->Destroy();
 	pCTFPlayerCanBuild->Destroy();
+	pInternalCalculateObjectCost->Destroy();
+	pCTFPlayerSharedCalculateObjectCost->Destroy();
+	handlesys->RemoveType(objinfo_handle, myself->GetIdentity());
+	handlesys->RemoveType(classdata_handle, myself->GetIdentity());
+	forwards->ReleaseForward(ClassCanBuildObject);
 	gameconfs->CloseGameConfigFile(g_pGameConf);
 }

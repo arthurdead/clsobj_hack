@@ -44,9 +44,13 @@
  * @brief Sample implementation of the SDK Extension.
  * Note: Uncomment one of the pre-defined virtual functions in order to use it.
  */
-class Sample : public SDKExtension
+class Sample : public SDKExtension, public IHandleTypeDispatch, public IConCommandBaseAccessor
 {
 public:
+	virtual void OnHandleDestroy(HandleType_t type, void *object);
+	
+	virtual bool RegisterConCommandBase(ConCommandBase *pCommand);
+	
 	/**
 	 * @brief This is called after the initial loading sequence has been processed.
 	 *

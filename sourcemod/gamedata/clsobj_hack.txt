@@ -20,6 +20,18 @@
 			{
 				"linux" "125"
 			}
+			"CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER"
+			{
+				"linux" "19"
+			}
+			"sizeof(CBaseObject)"
+			{
+				"linux" "2928"
+			}
+			"CBaseObject::GetBaseHealth"
+			{
+				"linux" "380"
+			}
 		}
 		"Signatures"
 		{
@@ -112,6 +124,36 @@
 			{
 				"library" "server"
 				"linux" "@_Z11ReadUsercmdP7bf_readP8CUserCmdS2_"
+			}
+			"CBaseObject::CBaseObject"
+			{
+				"library" "server"
+				"linux" "@_ZN11CBaseObjectC1Ev"
+			}
+			"CTFPlayerClassShared::CanBuildObject"
+			{
+				"library" "server"
+				"linux" "@_ZN20CTFPlayerClassShared14CanBuildObjectEi"
+			}
+			"CTFPlayer::GetLoadoutItem"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer14GetLoadoutItemEiib"
+			}
+			"CBaseObject::CanBeUpgraded"
+			{
+				"library" "server"
+				"linux" "@_ZN11CBaseObject13CanBeUpgradedEP9CTFPlayer"
+			}
+			"InternalCalculateObjectCost"
+			{
+				"library" "server"
+				"linux" "@_Z27InternalCalculateObjectCosti"
+			}
+			"CTFPlayerShared::CalculateObjectCost"
+			{
+				"library" "server"
+				"linux" "@_ZN15CTFPlayerShared19CalculateObjectCostEP9CTFPlayeri"
 			}
 		}
 	}

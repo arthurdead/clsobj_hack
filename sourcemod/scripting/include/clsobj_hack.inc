@@ -85,57 +85,132 @@ methodmap CObjectInfo
 {
 	public static native CObjectInfo Find(const char[] name);
 	public static native CObjectInfo Get(int index);
-	public static native CObjectInfo Create(KeyValues kv);
-	public static native CObjectInfo CloneByName(const char[] name);
-	public static native CObjectInfo CloneByIndex(int index);
 	public static native int Count();
 	public static native int GetIndex(const char[] name);
-	public static native void RemoveByName(const char[] name);
-	public static native void RemoveByIndex(int index);
 
-	public native CObjectInfo Clone();
+	public native void GetString(const char[] name, char[] value, int length, int index = 0);
+	public native float GetFloat(const char[] name);
+	public native int GetInt(const char[] name);
+
+	property int Index
+	{
+		public native get();
+	}
+};
+
+#define CObjectInfo_Null view_as<CObjectInfo>(Address_Null)
+
+methodmap CObjectInfoCustom < Handle
+{
+	public static native CObjectInfoCustom Create(KeyValues kv);
+	public static native CObjectInfoCustom CloneByName(const char[] name);
+	public static native CObjectInfoCustom CloneByIndex(int index);
 
 	public native void SetString(const char[] name, const char[] value, int index = 0);
 	public native void SetFloat(const char[] name, float value);
 	public native void SetInt(const char[] name, int value);
 
-	public native void GetString(const char[] name, const char[] value, int length, int index = 0);
-	public native float GetFloat(const char[] name);
-	public native int GetInt(const char[] name);
+	property CObjectInfo BaseInfo
+	{
+		public native get();
+	}
+
+	public void GetString(const char[] name, char[] value, int length, int index = 0)
+	{ this.BaseInfo.GetString(name, value, length, index); }
+	public float GetFloat(const char[] name)
+	{ return this.BaseInfo.GetFloat(name); }
+	public int GetInt(const char[] name)
+	{ return this.BaseInfo.GetInt(name); }
+
+	property int Index
+	{
+		public get()
+		{ return this.BaseInfo.Index; }
+	}
 };
 
-#define CObjectInfo_Null view_as<CObjectInfo>(Address_Null)
-
-methodmap TFPlayerClassData_t
+methodmap TFPlayerClassData
 {
-	public static native TFPlayerClassData_t Find(const char[] name);
-	public static native TFPlayerClassData_t Get(int index);
-	public static native TFPlayerClassData_t Create(KeyValues kv);
-	public static native TFPlayerClassData_t CloneByName(const char[] name);
-	public static native TFPlayerClassData_t CloneByIndex(int index);
+	public static native TFPlayerClassData Find(const char[] name);
+	public static native TFPlayerClassData Get(int index);
 	public static native int Count();
 	public static native int GetIndex(const char[] name);
-	public static native void RemoveByName(const char[] name);
-	public static native void RemoveByIndex(int index);
 
-	public native TFPlayerClassData_t Clone();
-
-	public native void SetString(const char[] name, const char[] value, int index = 0);
-	public native void SetFloat(const char[] name, float value);
-	public native void SetInt(const char[] name, int value, int index = 0);
-	public native void SetVector(const char[] name, float value[3]);
-
-	public native void GetString(const char[] name, const char[] value, int length, int index = 0);
+	public native void GetString(const char[] name, char[] value, int length, int index = 0);
 	public native float GetFloat(const char[] name, int index = 0);
 	public native int GetInt(const char[] name, int index = 0);
-	public native void GetVector(const char[] name, float value[3]);
+
+	property int Index
+	{
+		public native get();
+	}
 };
 
-#define TFPlayerClassData_Null view_as<TFPlayerClassData_t>(Address_Null)
+#define TFPlayerClassData_Null view_as<TFPlayerClassData>(Address_Null)
 
-native int BuilderGetNumBuildables(int entity);
-native int BuilderGetBuildableIndex(int entity, int index);
-native int BuilderIsBuildable(int entity, int index);
+methodmap TFPlayerClassDataCustom < Handle
+{
+	public static native TFPlayerClassDataCustom Create(KeyValues kv);
+	public static native TFPlayerClassDataCustom CloneByName(const char[] name);
+	public static native TFPlayerClassDataCustom CloneByIndex(int index);
+
+	public native void SetString(const char[] name, const char[] value, int index = 0);
+	public native void SetFloat(const char[] name, float value, int index = 0);
+	public native void SetInt(const char[] name, int value, int index = 0);
+
+	property TFPlayerClassData BaseData
+	{
+		public native get();
+	}
+
+	public void GetString(const char[] name, char[] value, int length, int index = 0)
+	{ this.BaseData.GetString(name, value, length, index); }
+	public float GetFloat(const char[] name, int index = 0)
+	{ return this.BaseData.GetFloat(name, index); }
+	public int GetInt(const char[] name, int index = 0)
+	{ return this.BaseData.GetInt(name, index); }
+
+	property int Index
+	{
+		public get()
+		{ return this.BaseData.Index; }
+	}
+};
+
+native void ManageBuilderWeaponsEx(int client, TFPlayerClassData class);
+
+stock void ManageBuilderWeaponsByIndex(int client, int class)
+{
+	TFPlayerClassData data = TFPlayerClassData.Get(view_as<int>(class));
+
+	ManageBuilderWeaponsEx(client, data);
+}
+
+stock void ManageBuilderWeapons(int client)
+{
+	TFClassType class = TF2_GetPlayerClass(client);
+
+	ManageBuilderWeaponsByIndex(client, view_as<int>(class));
+}
+
+forward Action ClassCanBuildObject(int client, int class, int type, bool &can);
+
+#tryinclude <datamaps>
+
+native Address AllocateBaseObject(int size_modifier);
+native int GetBaseObjectSize();
+
+stock Address datamaps_allocatebaseobject(int size_modifier)
+{
+	return AllocateBaseObject(size_modifier);
+}
+
+#if defined datamaps_included
+stock CustomEntityFactory register_baseobject_factory(const char[] classname)
+{
+	return EntityFactoryDictionary.register_function(classname, datamaps_allocatebaseobject, GetBaseObjectSize());
+}
+#endif
 
 #if !defined REQUIRE_EXTENSIONS
 public void __ext_clsobj_hack_SetNTVOptional()
