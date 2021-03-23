@@ -253,7 +253,6 @@ Action HandleBuildCommand(int client, const char[] command, int args)
 		int mode = args >= 3 ? GetCmdArgInt(2) : 0;
 
 		bSentByPlugin[client] = true;
-		PrintToServer("%s %i %i", command, m_iObjectType, mode);
 		ClientCommand(client, "%s %i %i", command, m_iObjectType, mode);
 		return Plugin_Stop;
 	}

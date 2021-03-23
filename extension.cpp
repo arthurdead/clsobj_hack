@@ -819,7 +819,7 @@ int m_iClassOffset = -1;
 
 void UpdateBuilders()
 {
-	if(!playerhelpers) {
+	if(!playerhelpers || m_iClassOffset == -1) {
 		return;
 	}
 	
@@ -831,6 +831,10 @@ void UpdateBuilders()
 		
 		CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(pPlayer->GetIndex());
 		int m_iClass = *(int *)((unsigned char *)pEntity + m_iClassOffset);
+		if(m_iClass < TF_FIRST_NORMAL_CLASS || m_iClass >= TF_LAST_NORMAL_CLASS) {
+			continue;
+		}
+
 		TFPlayerClassData_t *pClassData = m_aTFPlayerClassData[m_iClass].get();
 		call_mfunc<void, CBaseEntity, TFPlayerClassData_t *>(pEntity, CTFPlayerManageBuilderWeapons, pClassData);
 	}
@@ -2995,6 +2999,10 @@ DETOUR_DECL_MEMBER1(CBaseObjectCanBeUpgraded, bool, CBaseEntity *, pPlayer)
 
 DETOUR_DECL_STATIC2(ClassCanBuild, bool, int, iClass, int, iObjectType)
 {
+	if(iObjectType == OBJ_LAST) {
+		return false;
+	}
+	
 	bool ret = false;
 	
 	for ( int i = 0; i < TF_PLAYER_BLUEPRINT_COUNT; i++ )
@@ -3030,6 +3038,10 @@ DETOUR_DECL_MEMBER1(CTFPlayerClassSharedCanBuildObject, bool, int, iObjectType)
 {
 	if(bInManageBuilderWeapons) {
 		iLastObjectType = iObjectType;
+	}
+	
+	if(iObjectType == OBJ_LAST) {
+		return false;
 	}
 	
 	int m_iClass = *(int *)((unsigned char *)this + m_iClassLocalOffset);
