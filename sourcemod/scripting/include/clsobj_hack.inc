@@ -178,6 +178,32 @@ methodmap TFPlayerClassDataCustom < Handle
 };
 
 native void ManageBuilderWeaponsEx(int client, TFPlayerClassData class);
+native void BuilderSetAsBuildable(int entity, int type, bool value);
+
+stock int GetBuilderOfType(int client, int type)
+{
+	static int m_hMyWeaponsLen = -1;
+	if(m_hMyWeaponsLen == -1) {
+		m_hMyWeaponsLen = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
+	}
+
+	for(int i = 0; i < m_hMyWeaponsLen; ++i) {
+		int weapon = GetEntPropEnt(client, Prop_Send, "m_hMyWeapons", i);
+		if(weapon == -1) {
+			continue;
+		}
+
+		if(!HasEntProp(weapon, Prop_Send, "m_iObjectType")) {
+			continue;
+		}
+
+		if(GetEntProp(weapon, Prop_Send, "m_iObjectType") == type) {
+			return weapon;
+		}
+	}
+
+	return -1;
+}
 
 stock void ManageBuilderWeaponsByIndex(int client, int class)
 {

@@ -2423,6 +2423,41 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	}
 }
 
+static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *params)
+{
+	CBaseEntity *pEntity = gamehelpers->ReferenceToEntity(params[1]);
+	if(!pEntity) {
+		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
+	}
+	
+	if(params[2] < OBJ_LAST) {
+		*(bool *)((unsigned char *)pEntity + m_aBuildableObjectTypesOffset + params[2]) = params[3];
+	} else {
+		auto it = buildervarsmap.find(pEntity);
+		if(it != buildervarsmap.end()) {
+			auto &map = it->second.m_aBuildableObjectTypes;
+			auto it2 = map.find(params[2]);
+			if(params[3]) {
+				if(it2 == map.end()) {
+					CObjectInfo *pInfo = g_ObjectInfos[params[2]].get();
+					
+					if(pInfo->m_nRepresentative != OBJ_LAST) {
+						map[params[2]] = pInfo->m_nRepresentative;
+					} else {
+						map[params[2]] = -1;
+					}
+				}
+			} else {
+				if(it2 != map.end()) {
+					map.erase(it2);
+				}
+			}
+		}
+	}
+	
+	return 0;
+}
+
 static cell_t ManageBuilderWeaponsEx(IPluginContext *pContext, const cell_t *params)
 {
 	IGamePlayer *pPlayer = playerhelpers->GetGamePlayer(params[1]);
@@ -2588,6 +2623,7 @@ static const sp_nativeinfo_t g_sNativesInfo[] =
 	{"AllocateBaseObject", AllocateBaseObject},
 	{"GetBaseObjectSize", GetBaseObjectSize},
 	{"ManageBuilderWeaponsEx", ManageBuilderWeaponsEx},
+	{"BuilderSetAsBuildableInternal", BuilderSetAsBuildable},
 	{nullptr, nullptr},
 };
 

@@ -8,11 +8,46 @@ native int BuilderGetBuildableIndex(int entity, int index);
 native int BuilderIsBuildable(int entity, int index);
 native int BuilderIndexByRepresentative(int entity, int type);
 native int BuilderRepresentativeByIndex(int entity, int type);
+native void BuilderSetAsBuildableInternal(int entity, int type, bool value);
 
 int m_hMyWeaponsLen = -1;
 bool bSentByPlugin[MAXPLAYERS+1] = {false, ...};
 
 ConVar tf_cheapobjects = null;
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	CreateNative("BuilderSetAsBuildable", BuilderSetAsBuildableNative);
+	return APLRes_Success;
+}
+
+int BuilderSetAsBuildableNative(Handle plugin, int params)
+{
+	int entity = GetNativeCell(1);
+	int type = GetNativeCell(2);
+	bool value = GetNativeCell(3);
+
+	BuilderSetAsBuildableInternal(entity, type, value);
+
+	SendProxy_Unhook(entity, "m_iObjectType", ProxyObjectType);
+
+	for(int i = 0; i < OBJ_LAST; ++i) {
+		SendProxy_UnhookArrayProp(entity, "m_aBuildableObjectTypes", i, Prop_Int, ProxyBuildableObjectTypes);
+	}
+
+	if(value) {
+		if(type > OBJ_LAST) {
+			SendProxy_Hook(entity, "m_iObjectType", Prop_Int, ProxyObjectType);
+
+			CObjectInfo info = CObjectInfo.Get(type);
+			int rep = info.GetInt("m_nRepresentative");
+
+			if(rep != OBJ_LAST) {
+				SendProxy_HookArrayProp(entity, "m_aBuildableObjectTypes", rep, Prop_Int, ProxyBuildableObjectTypes);
+			}
+		}
+	}
+}
 
 public void OnPluginStart()
 {
