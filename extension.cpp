@@ -38,6 +38,8 @@
 #include <vector>
 #include <mathlib/IceKey.H>
 #include <unordered_map>
+#include <vector>
+#include <memory>
 #include <icvar.h>
 
 enum PLAYER_ANIM {};
