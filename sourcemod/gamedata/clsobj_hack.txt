@@ -30,7 +30,7 @@
 			}
 			"CBaseObject::GetBaseHealth"
 			{
-				"linux" "380"
+				"linux" "381"
 			}
 		}
 		"Signatures"
