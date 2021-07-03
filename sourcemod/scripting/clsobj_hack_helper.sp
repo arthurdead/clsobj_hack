@@ -248,7 +248,7 @@ Action sm_dumpobjsinfo(int client, int args)
 	return Plugin_Handled;
 }
 
-public void OnClientDisconnected(int client)
+public void OnClientDisconnect(int client)
 {
 	bSentByPlugin[client] = false;
 }
