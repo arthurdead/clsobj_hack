@@ -2,6 +2,7 @@
 #include <clsobj_hack>
 #include <sendproxy>
 #include <sdkhooks>
+#include <tf2_stocks>
 
 native int BuilderGetNumBuildables(int entity);
 native int BuilderGetBuildableIndex(int entity, int index);

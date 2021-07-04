@@ -2633,11 +2633,9 @@ CDetour *pClassCanBuild = nullptr;
 
 #include <sourcehook/sh_memory.h>
 
-void *CTFWeaponBuilderPrecache = nullptr;
 void *CTFPlayerCanBuild = nullptr;
 void *CTFPlayerPrecachePlayerModels = nullptr;
 
-int CTFWeaponBuilderPrecacheOBJ_LAST = -1;
 int CTFPlayerManageBuilderWeaponsOBJ_LAST = -1;
 int CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1 = -1;
 int CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 = -1;
@@ -2652,8 +2650,7 @@ void UpdateObjectOffsets()
 	}
 	
 	size_t size = g_ObjectInfos.size();
-	
-	*(unsigned char *)((unsigned char *)CTFWeaponBuilderPrecache + CTFWeaponBuilderPrecacheOBJ_LAST) = size;
+
 	*(unsigned char *)((unsigned char *)CTFPlayerManageBuilderWeapons + CTFPlayerManageBuilderWeaponsOBJ_LAST) = size;
 	*(unsigned char *)((unsigned char *)CTFPlayerCanBuild + CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER) = size;
 }
@@ -2674,6 +2671,40 @@ CDetour *pCTFWeaponBuilderCanBuildObjectType = nullptr;
 CDetour *pCTFWeaponBuilderSetObjectTypeAsBuildable = nullptr;
 CDetour *pCTFWeaponBuilderCTOR = nullptr;
 
+void *CTFWeaponBasePrecache = nullptr;
+void *CBaseEntityPrecacheModel = nullptr;
+
+SH_DECL_MANUALHOOK0_void(Precache, 0, 0, 0)
+
+void PrecacheModel(const char *mdl)
+{
+	((void(*)(const char *))CBaseEntityPrecacheModel)(mdl);
+}
+
+void HookBuilderPrecache()
+{
+	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
+
+	call_mfunc<void, CBaseEntity>((CBaseEntity *)pEntity, CTFWeaponBasePrecache);
+
+	for ( int iObj=0, len = g_ObjectInfos.size(); iObj < len; ++iObj )
+	{
+		const CObjectInfo *pInfo = g_ObjectInfos[ iObj ].get();
+
+		if ( pInfo->m_pViewModel )
+		{
+			PrecacheModel( pInfo->m_pViewModel );
+		}
+
+		if ( pInfo->m_pPlayerModel )
+		{
+			PrecacheModel( pInfo->m_pPlayerModel );
+		}
+	}
+
+	RETURN_META(MRES_SUPERCEDE);
+}
+
 void HookBuilderDtor()
 {
 	void *ptr = META_IFACEPTR(void);
@@ -2681,6 +2712,7 @@ void HookBuilderDtor()
 	buildervarsmap.erase(ptr);
 	
 	SH_REMOVE_MANUALHOOK(GenericDtor, ptr, SH_STATIC(HookBuilderDtor), false);
+	SH_REMOVE_MANUALHOOK(Precache, ptr, SH_STATIC(HookBuilderPrecache), false);
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -2692,6 +2724,7 @@ DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
 	buildervarsmap.emplace(this, builder_vars_t{});
 	
 	SH_ADD_MANUALHOOK(GenericDtor, this, SH_STATIC(HookBuilderDtor), false);
+	SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
 }
 
 DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
@@ -3272,21 +3305,23 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	int offset = -1;
 	g_pGameConf->GetOffset("CBaseObject::GetBaseHealth", &offset);
 	SH_MANUALHOOK_RECONFIGURE(GetBaseHealth, offset, 0, 0);
+
+	g_pGameConf->GetOffset("CBaseEntity::Precache", &offset);
+	SH_MANUALHOOK_RECONFIGURE(Precache, offset, 0, 0);
 	
-	g_pGameConf->GetOffset("CTFWeaponBuilder::Precache::OBJ_LAST", &CTFWeaponBuilderPrecacheOBJ_LAST);
 	g_pGameConf->GetOffset("CTFPlayer::ManageBuilderWeapons::OBJ_LAST", &CTFPlayerManageBuilderWeaponsOBJ_LAST);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2);
 	g_pGameConf->GetOffset("CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER", &CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER);
-	
-	g_pGameConf->GetMemSig("CTFWeaponBuilder::Precache", &CTFWeaponBuilderPrecache);
+	;
 	g_pGameConf->GetMemSig("CTFPlayer::ManageBuilderWeapons", &CTFPlayerManageBuilderWeapons);
 	g_pGameConf->GetMemSig("CTFPlayer::CanBuild", &CTFPlayerCanBuild);
 	g_pGameConf->GetMemSig("CTFPlayer::PrecachePlayerModels", &CTFPlayerPrecachePlayerModels);
 	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
 	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
+	g_pGameConf->GetMemSig("CTFWeaponBase::Precache", &CTFWeaponBasePrecache);
+	g_pGameConf->GetMemSig("CBaseEntity::PrecacheModel", &CBaseEntityPrecacheModel);
 	
-	SourceHook::SetMemAccess(CTFWeaponBuilderPrecache, CTFWeaponBuilderPrecacheOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerManageBuilderWeapons, CTFPlayerManageBuilderWeaponsOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerCanBuild, CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerPrecachePlayerModels, CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);

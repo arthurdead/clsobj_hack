@@ -4,13 +4,9 @@
 	{
 		"Offsets"
 		{
-			"CTFWeaponBuilder::Precache::OBJ_LAST"
-			{
-				"linux" "86"
-			}
 			"CTFPlayer::ManageBuilderWeapons::OBJ_LAST"
 			{
-				"linux" "272"
+				"linux" "279"
 			}
 			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1"
 			{
@@ -18,7 +14,7 @@
 			}
 			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2"
 			{
-				"linux" "125"
+				"linux" "331"
 			}
 			"CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER"
 			{
@@ -31,6 +27,10 @@
 			"CBaseObject::GetBaseHealth"
 			{
 				"linux" "381"
+			}
+			"CBaseEntity::Precache"
+			{
+				"linux" "24"
 			}
 		}
 		"Signatures"
@@ -64,11 +64,6 @@
 			{
 				"library" "server"
 				"linux" "@_ZN21CTFPlayerClassDataMgr30AddAdditionalPlayerDeathSoundsEv"
-			}
-			"CTFWeaponBuilder::Precache"
-			{
-				"library" "server"
-				"linux" "@_ZN16CTFWeaponBuilder8PrecacheEv"
 			}
 			"CBaseObject::CanBeUpgraded"
 			{
@@ -154,6 +149,16 @@
 			{
 				"library" "server"
 				"linux" "@_ZN15CTFPlayerShared19CalculateObjectCostEP9CTFPlayeri"
+			}
+			"CTFWeaponBase::Precache"
+			{
+				"library" "server"
+				"linux" "@_ZN24CTFWeaponBaseGrenadeProj8PrecacheEv"
+			}
+			"CBaseEntity::PrecacheModel"
+			{
+				"library" "server"
+				"linux" "@_ZN11CBaseEntity13PrecacheModelEPKcb"
 			}
 		}
 	}
