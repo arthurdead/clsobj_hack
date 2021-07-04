@@ -6,7 +6,6 @@
 
 native int BuilderGetNumBuildables(int entity);
 native int BuilderGetBuildableIndex(int entity, int index);
-native int BuilderIsBuildable(int entity, int index);
 native int BuilderIndexByRepresentative(int entity, int type);
 native int BuilderRepresentativeByIndex(int entity, int type);
 native void BuilderSetAsBuildableInternal(int entity, int type, bool value);
@@ -57,8 +56,39 @@ public void OnPluginStart()
 
 	RegAdminCmd("sm_dumpobjsinfo", sm_dumpobjsinfo, ADMFLAG_GENERIC);
 	RegAdminCmd("sm_refreshbuilder", sm_refreshbuilder, ADMFLAG_GENERIC);
+	RegAdminCmd("sm_dumpbuilder", sm_dumpbuilder, ADMFLAG_GENERIC);
 
 	tf_cheapobjects = FindConVar("tf_cheapobjects");
+}
+
+Action sm_dumpbuilder(int client, int args)
+{
+	if(m_hMyWeaponsLen == -1) {
+		m_hMyWeaponsLen = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
+	}
+
+	char classname[64];
+	for(int i = 0; i < m_hMyWeaponsLen; ++i) {
+		int weapon = GetEntPropEnt(client, Prop_Send, "m_hMyWeapons", i);
+		if(weapon == -1) {
+			continue;
+		}
+
+		if(!HasEntProp(weapon, Prop_Send, "m_iObjectType")) {
+			continue;
+		}
+
+		GetEntityClassname(weapon, classname, sizeof(classname));
+
+		int m_iObjectType = GetEntProp(weapon, Prop_Send, "m_iObjectType");
+		PrintToConsole(client, "slot: %i - ent: %i - %s:\n  m_iObjectType = %i", i, weapon, classname, m_iObjectType);
+		for(int j = 0, len = BuilderGetNumBuildables(weapon); j < len; ++j) {
+			bool buildable = BuilderIsBuildable(weapon, j);
+			PrintToConsole(client, "  m_aBuildableObjectTypes[%i] = %i", j, buildable);
+		}
+	}
+
+	return Plugin_Handled;
 }
 
 Action sm_refreshbuilder(int client, int args)

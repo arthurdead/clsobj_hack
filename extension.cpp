@@ -2352,13 +2352,17 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 	} else {
 		auto it = buildervarsmap.find(pEntity);
 		if(it != buildervarsmap.end()) {
-			auto it2 = it->second.m_aBuildableObjectTypes.begin();
-			std::advance(it2, params[2]-OBJ_LAST);
-			return it2->first;
-		} else {
-			return -1;
+			int idx = params[2]-OBJ_LAST;
+			auto &map = it->second.m_aBuildableObjectTypes;
+			if(idx < map.size()) {
+				auto it2 = map.begin();
+				std::advance(it2, idx);
+				return it2->first;
+			}
 		}
 	}
+
+	return -1;
 }
 
 static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_t *params)
@@ -2416,13 +2420,13 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	} else {
 		auto it = buildervarsmap.find(pEntity);
 		if(it != buildervarsmap.end()) {
-			auto it2 = it->second.m_aBuildableObjectTypes.begin();
-			std::advance(it2, params[2]-OBJ_LAST);
-			return it2->second;
-		} else {
-			return 0;
+			int idx = params[2]-OBJ_LAST;
+			auto &map = it->second.m_aBuildableObjectTypes;
+			return (idx < map.size());
 		}
 	}
+
+	return 0;
 }
 
 static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *params)
@@ -2724,21 +2728,25 @@ DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
 	buildervarsmap.emplace(this, builder_vars_t{});
 	
 	SH_ADD_MANUALHOOK(GenericDtor, this, SH_STATIC(HookBuilderDtor), false);
-	SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
+	//SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
 }
 
 DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
 {
-	if ( iObjectType < 0 || iObjectType >= g_ObjectInfos.size() )
+	if ( iObjectType < 0 || iObjectType >= g_ObjectInfos.size() ) {
 		return false;
+	}
 	
 	bool value = false;
 	
 	if( iObjectType < OBJ_LAST ) {
 		value = *(bool *)((unsigned char *)this + m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
-		auto &map = buildervarsmap[this].m_aBuildableObjectTypes;
-		value = (map.find(iObjectType) != map.end());
+		auto it = buildervarsmap.find(this);
+		if(it != buildervarsmap.end()) {
+			auto &map = it->second.m_aBuildableObjectTypes;
+			value = (map.find(iObjectType) != map.end());
+		}
 	}
 	
 	return value;
@@ -2756,12 +2764,14 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderSetObjectTypeAsBuildable, void, int, iObject
 		SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
 		CObjectInfo *pInfo = g_ObjectInfos[iObjectType].get();
-		if(pInfo->m_nRepresentative != OBJ_LAST) {
-			buildervarsmap[this].m_aBuildableObjectTypes[iObjectType] = pInfo->m_nRepresentative;
-			
-			SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + pInfo->m_nRepresentative);
-		} else {
-			buildervarsmap[this].m_aBuildableObjectTypes[iObjectType] = -1;
+		auto it = buildervarsmap.find(this);
+		if(it != buildervarsmap.end()) {
+			if(pInfo->m_nRepresentative != OBJ_LAST) {
+				it->second.m_aBuildableObjectTypes[iObjectType] = pInfo->m_nRepresentative;
+				SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + pInfo->m_nRepresentative);
+			} else {
+				it->second.m_aBuildableObjectTypes[iObjectType] = -1;
+			}
 		}
 	}
 	

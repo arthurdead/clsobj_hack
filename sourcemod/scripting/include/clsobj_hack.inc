@@ -179,8 +179,9 @@ methodmap TFPlayerClassDataCustom < Handle
 
 native void ManageBuilderWeaponsEx(int client, TFPlayerClassData class);
 native void BuilderSetAsBuildable(int entity, int type, bool value);
+native bool BuilderIsBuildable(int entity, int type);
 
-stock int GetBuilderOfType(int client, int type)
+stock int GetBuilderForObjectType(int client, int type)
 {
 	static int m_hMyWeaponsLen = -1;
 	if(m_hMyWeaponsLen == -1) {
@@ -197,7 +198,7 @@ stock int GetBuilderOfType(int client, int type)
 			continue;
 		}
 
-		if(GetEntProp(weapon, Prop_Send, "m_iObjectType") == type) {
+		if(type == -1 || BuilderIsBuildable(weapon, type)) {
 			return weapon;
 		}
 	}
@@ -226,7 +227,7 @@ forward Action ClassCanBuildObject(int client, int class, int type, bool &can);
 native Address AllocateBaseObject(int size_modifier);
 native int GetBaseObjectSize();
 
-stock Address datamaps_allocatebaseobject(int size_modifier)
+stock Address datamaps_allocatebaseobject(int size_modifier, any data)
 {
 	return AllocateBaseObject(size_modifier);
 }
