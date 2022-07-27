@@ -4,18 +4,8 @@
 #define clsobjhack_included
 
 #include <tf2>
-
-enum
-{
-	TF_AMMO_DUMMY = 0,	// Dummy index to make the CAmmoDef indices correct for the other ammo types.
-	TF_AMMO_PRIMARY,
-	TF_AMMO_SECONDARY,
-	TF_AMMO_METAL,
-	TF_AMMO_GRENADES1,
-	TF_AMMO_GRENADES2,
-	TF_AMMO_GRENADES3,	// Utility Slot Grenades
-	TF_AMMO_COUNT,
-};
+#include <tf2_stocks>
+#tryinclude <wpnhack>
 
 #define TF_CLASS_RANDOM TF_CLASS_COUNT_ALL+1
 #define TF_CLASS_COUNT_ALL TF_CLASS_CIVILIAN+1
@@ -64,7 +54,21 @@ enum DeathSoundType_t
 #define OBJECT_MAX_GIB_MODELS	9
 #define OBJECT_MAX_MODES		3
 
-#define OBJ_LAST (view_as<int>(TFObject_Sapper)+1)
+#define OBJ_LAST (view_as<TFObjectType>(view_as<int>(TFObject_Sapper)+1))
+
+enum
+{
+	OF_ALLOW_REPEAT_PLACEMENT				= 0x01,
+	OF_MUST_BE_BUILT_ON_ATTACHMENT			= 0x02,
+	OF_DOESNT_HAVE_A_MODEL					= 0x04,
+	OF_PLAYER_DESTRUCTION					= 0x08,
+
+	//
+	// ADD NEW ITEMS HERE TO AVOID BREAKING DEMOS
+	//
+
+	OF_BIT_COUNT	= 4
+};
 
 enum
 {
@@ -77,14 +81,14 @@ enum
 };
 
 #define BUILDER_OBJECT_BITS 8
-#define BUILDER_INVALID_OBJECT ((1 << BUILDER_OBJECT_BITS) - 1)
+#define BUILDER_INVALID_OBJECT view_as<TFObjectType>((1 << BUILDER_OBJECT_BITS) - 1)
 
 #define MAX_OBJECTS_PER_PLAYER	6
 
 methodmap CObjectInfo
 {
 	public static native CObjectInfo Find(const char[] name);
-	public static native CObjectInfo Get(int index);
+	public static native CObjectInfo Get(TFObjectType index);
 	public static native int Count();
 	public static native int GetIndex(const char[] name);
 
@@ -92,7 +96,7 @@ methodmap CObjectInfo
 	public native float GetFloat(const char[] name);
 	public native int GetInt(const char[] name);
 
-	property int Index
+	property TFObjectType Index
 	{
 		public native get();
 	}
@@ -104,7 +108,7 @@ methodmap CObjectInfoCustom < Handle
 {
 	public static native CObjectInfoCustom Create(KeyValues kv);
 	public static native CObjectInfoCustom CloneByName(const char[] name);
-	public static native CObjectInfoCustom CloneByIndex(int index);
+	public static native CObjectInfoCustom CloneByIndex(TFObjectType index);
 
 	public native void SetString(const char[] name, const char[] value, int index = 0);
 	public native void SetFloat(const char[] name, float value);
@@ -122,7 +126,7 @@ methodmap CObjectInfoCustom < Handle
 	public int GetInt(const char[] name)
 	{ return this.BaseInfo.GetInt(name); }
 
-	property int Index
+	property TFObjectType Index
 	{
 		public get()
 		{ return this.BaseInfo.Index; }
@@ -132,7 +136,7 @@ methodmap CObjectInfoCustom < Handle
 methodmap TFPlayerClassData
 {
 	public static native TFPlayerClassData Find(const char[] name);
-	public static native TFPlayerClassData Get(int index);
+	public static native TFPlayerClassData Get(TFClassType index);
 	public static native int Count();
 	public static native int GetIndex(const char[] name);
 
@@ -152,7 +156,7 @@ methodmap TFPlayerClassDataCustom < Handle
 {
 	public static native TFPlayerClassDataCustom Create(KeyValues kv);
 	public static native TFPlayerClassDataCustom CloneByName(const char[] name);
-	public static native TFPlayerClassDataCustom CloneByIndex(int index);
+	public static native TFPlayerClassDataCustom CloneByIndex(TFClassType index);
 
 	public native void SetString(const char[] name, const char[] value, int index = 0);
 	public native void SetFloat(const char[] name, float value, int index = 0);
@@ -178,10 +182,10 @@ methodmap TFPlayerClassDataCustom < Handle
 };
 
 native void ManageBuilderWeaponsEx(int client, TFPlayerClassData class);
-native void BuilderSetAsBuildable(int entity, int type, bool value);
-native bool BuilderIsBuildable(int entity, int type);
+native void BuilderSetAsBuildable(int entity, TFObjectType type, bool value);
+native bool BuilderIsBuildable(int entity, TFObjectType type);
 
-stock int GetBuilderForObjectType(int client, int type)
+stock int GetBuilderForObjectType(int client, TFObjectType type)
 {
 	static int m_hMyWeaponsLen = -1;
 	if(m_hMyWeaponsLen == -1) {
@@ -198,7 +202,7 @@ stock int GetBuilderForObjectType(int client, int type)
 			continue;
 		}
 
-		if(type == -1 || BuilderIsBuildable(weapon, type)) {
+		if(type == BUILDER_INVALID_OBJECT || BuilderIsBuildable(weapon, type)) {
 			return weapon;
 		}
 	}
@@ -206,9 +210,9 @@ stock int GetBuilderForObjectType(int client, int type)
 	return -1;
 }
 
-stock void ManageBuilderWeaponsByIndex(int client, int class)
+stock void ManageBuilderWeaponsByIndex(int client, TFClassType class)
 {
-	TFPlayerClassData data = TFPlayerClassData.Get(view_as<int>(class));
+	TFPlayerClassData data = TFPlayerClassData.Get(class);
 
 	ManageBuilderWeaponsEx(client, data);
 }
@@ -217,10 +221,10 @@ stock void ManageBuilderWeapons(int client)
 {
 	TFClassType class = TF2_GetPlayerClass(client);
 
-	ManageBuilderWeaponsByIndex(client, view_as<int>(class));
+	ManageBuilderWeaponsByIndex(client, class);
 }
 
-forward Action ClassCanBuildObject(int client, int class, int type, bool &can);
+forward Action ClassCanBuildObject(int client, TFClassType class, TFObjectType type, bool &can);
 
 #tryinclude <datamaps>
 

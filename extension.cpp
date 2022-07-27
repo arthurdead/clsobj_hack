@@ -122,6 +122,12 @@ enum ObjectType_t
 	OBJ_LAST,
 };
 
+enum
+{
+	BUILDER_OBJECT_BITS = 8,
+	BUILDER_INVALID_OBJECT = ((1 << BUILDER_OBJECT_BITS) - 1)
+};
+
 class CObjectInfo
 {
 public:
@@ -1550,7 +1556,7 @@ static cell_t CObjectInfoGetIndex(IPluginContext *pContext, const cell_t *params
 		}
 	}
 	
-	return -1;
+	return BUILDER_INVALID_OBJECT;
 }
 
 static cell_t CObjectInfoGet(IPluginContext *pContext, const cell_t *params)
@@ -2300,7 +2306,7 @@ struct builder_vars_t
 	std::unordered_map<int, int> m_aBuildableObjectTypes{};
 };
 
-std::unordered_map<void *, builder_vars_t> buildervarsmap{};
+std::unordered_map<int, builder_vars_t> buildervarsmap{};
 
 void RemoveBuilderVars(int index)
 {
@@ -2331,8 +2337,10 @@ static cell_t BuilderGetNumBuildables(IPluginContext *pContext, const cell_t *pa
 	}
 	
 	cell_t ret = OBJ_LAST;
+
+	int ref = gamehelpers->EntityToBCompatRef(pEntity);
 	
-	auto it = buildervarsmap.find(pEntity);
+	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		ret += it->second.m_aBuildableObjectTypes.size();
 	}
@@ -2350,7 +2358,9 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 	if(params[2] < OBJ_LAST) {
 		return params[2];
 	} else {
-		auto it = buildervarsmap.find(pEntity);
+		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+
+		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			int idx = params[2]-OBJ_LAST;
 			auto &map = it->second.m_aBuildableObjectTypes;
@@ -2362,7 +2372,7 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 		}
 	}
 
-	return -1;
+	return BUILDER_INVALID_OBJECT;
 }
 
 static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_t *params)
@@ -2371,8 +2381,10 @@ static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_
 	if(!pEntity) {
 		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
 	}
+
+	int ref = gamehelpers->EntityToBCompatRef(pEntity);
 	
-	auto it = buildervarsmap.find(pEntity);
+	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		auto &map = it->second.m_aBuildableObjectTypes;
 		auto it2 = map.begin();
@@ -2384,7 +2396,7 @@ static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_
 		}
 	}
 	
-	return -1;
+	return BUILDER_INVALID_OBJECT;
 }
 
 static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_t *params)
@@ -2393,8 +2405,10 @@ static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_
 	if(!pEntity) {
 		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
 	}
+
+	int ref = gamehelpers->EntityToBCompatRef(pEntity);
 	
-	auto it = buildervarsmap.find(pEntity);
+	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		auto &map = it->second.m_aBuildableObjectTypes;
 		auto it2 = map.find(params[2]);
@@ -2403,7 +2417,7 @@ static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_
 		}
 	}
 	
-	return -1;
+	return BUILDER_INVALID_OBJECT;
 }
 
 int m_aBuildableObjectTypesOffset = -1;
@@ -2418,7 +2432,9 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	if(params[2] < OBJ_LAST) {
 		return *(bool *)((unsigned char *)pEntity + m_aBuildableObjectTypesOffset + params[2]);
 	} else {
-		auto it = buildervarsmap.find(pEntity);
+		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+
+		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			int idx = params[2]-OBJ_LAST;
 			auto &map = it->second.m_aBuildableObjectTypes;
@@ -2439,7 +2455,9 @@ static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *para
 	if(params[2] < OBJ_LAST) {
 		*(bool *)((unsigned char *)pEntity + m_aBuildableObjectTypesOffset + params[2]) = params[3];
 	} else {
-		auto it = buildervarsmap.find(pEntity);
+		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+
+		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			auto &map = it->second.m_aBuildableObjectTypes;
 			auto it2 = map.find(params[2]);
@@ -2450,7 +2468,7 @@ static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *para
 					if(pInfo->m_nRepresentative != OBJ_LAST) {
 						map[params[2]] = pInfo->m_nRepresentative;
 					} else {
-						map[params[2]] = -1;
+						map[params[2]] = BUILDER_INVALID_OBJECT;
 					}
 				}
 			} else {
@@ -2679,6 +2697,7 @@ void *CTFWeaponBasePrecache = nullptr;
 void *CBaseEntityPrecacheModel = nullptr;
 
 SH_DECL_MANUALHOOK0_void(Precache, 0, 0, 0)
+SH_DECL_MANUALHOOK0_void(Spawn, 0, 0, 0)
 
 void PrecacheModel(const char *mdl)
 {
@@ -2709,14 +2728,28 @@ void HookBuilderPrecache()
 	RETURN_META(MRES_SUPERCEDE);
 }
 
+void HookBuilderSpawn()
+{
+	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
+
+	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+
+	buildervarsmap.emplace(ref, builder_vars_t{});
+
+	RETURN_META(MRES_IGNORED);
+}
+
 void HookBuilderDtor()
 {
-	void *ptr = META_IFACEPTR(void);
+	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
 	
-	buildervarsmap.erase(ptr);
+	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+
+	buildervarsmap.erase(ref);
 	
-	SH_REMOVE_MANUALHOOK(GenericDtor, ptr, SH_STATIC(HookBuilderDtor), false);
-	SH_REMOVE_MANUALHOOK(Precache, ptr, SH_STATIC(HookBuilderPrecache), false);
+	SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_STATIC(HookBuilderDtor), false);
+	SH_REMOVE_MANUALHOOK(Precache, pEntity, SH_STATIC(HookBuilderPrecache), false);
+	SH_REMOVE_MANUALHOOK(Spawn, pEntity, SH_STATIC(HookBuilderSpawn), false);
 	
 	RETURN_META(MRES_IGNORED);
 }
@@ -2725,9 +2758,8 @@ DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
 {
 	DETOUR_MEMBER_CALL(CTFWeaponBuilderCTOR)();
 	
-	buildervarsmap.emplace(this, builder_vars_t{});
-	
 	SH_ADD_MANUALHOOK(GenericDtor, this, SH_STATIC(HookBuilderDtor), false);
+	SH_ADD_MANUALHOOK(Spawn, this, SH_STATIC(HookBuilderSpawn), false);
 	//SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
 }
 
@@ -2742,7 +2774,9 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
 	if( iObjectType < OBJ_LAST ) {
 		value = *(bool *)((unsigned char *)this + m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
-		auto it = buildervarsmap.find(this);
+		int ref = gamehelpers->EntityToBCompatRef((CBaseEntity *)this);
+
+		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			auto &map = it->second.m_aBuildableObjectTypes;
 			value = (map.find(iObjectType) != map.end());
@@ -2764,13 +2798,16 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderSetObjectTypeAsBuildable, void, int, iObject
 		SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
 		CObjectInfo *pInfo = g_ObjectInfos[iObjectType].get();
-		auto it = buildervarsmap.find(this);
+
+		int ref = gamehelpers->EntityToBCompatRef((CBaseEntity *)this);
+
+		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			if(pInfo->m_nRepresentative != OBJ_LAST) {
 				it->second.m_aBuildableObjectTypes[iObjectType] = pInfo->m_nRepresentative;
 				SetEdictStateChanged((CBaseEntity *)this, m_aBuildableObjectTypesOffset + pInfo->m_nRepresentative);
 			} else {
-				it->second.m_aBuildableObjectTypes[iObjectType] = -1;
+				it->second.m_aBuildableObjectTypes[iObjectType] = BUILDER_INVALID_OBJECT;
 			}
 		}
 	}
@@ -3056,14 +3093,14 @@ IForward *ClassCanBuildObject = nullptr;
 CDetour *pCTFPlayerManageBuilderWeapons = nullptr;
 
 bool bInManageBuilderWeapons = false;
-int iLastObjectType = -1;
+int iLastObjectType = BUILDER_INVALID_OBJECT;
 
 DETOUR_DECL_MEMBER1(CTFPlayerManageBuilderWeapons, void, TFPlayerClassData_t *, pClassData)
 {
 	bInManageBuilderWeapons = true;
 	DETOUR_MEMBER_CALL(CTFPlayerManageBuilderWeapons)(pClassData);
 	bInManageBuilderWeapons = false;
-	iLastObjectType = -1;
+	iLastObjectType = BUILDER_INVALID_OBJECT;
 }
 
 CDetour *pCBaseObjectCanBeUpgraded = nullptr;
@@ -3190,7 +3227,7 @@ enum loadout_positions_t
 
 DETOUR_DECL_MEMBER3(CTFPlayerGetLoadoutItem, void *, int, iClass, int, iSlot, bool, bReportWhitelistFails)
 {
-	if(iLastObjectType != -1) {
+	if(iLastObjectType != BUILDER_INVALID_OBJECT) {
 		if(g_ObjectInfos[iLastObjectType]->m_bRequiresOwnBuilder && iSlot == LOADOUT_POSITION_BUILDING) {
 			//iSlot = LOADOUT_POSITION_BUILDING2;
 		}
@@ -3318,6 +3355,9 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 
 	g_pGameConf->GetOffset("CBaseEntity::Precache", &offset);
 	SH_MANUALHOOK_RECONFIGURE(Precache, offset, 0, 0);
+
+	g_pGameConf->GetOffset("CBaseEntity::Spawn", &offset);
+	SH_MANUALHOOK_RECONFIGURE(Spawn, offset, 0, 0);
 	
 	g_pGameConf->GetOffset("CTFPlayer::ManageBuilderWeapons::OBJ_LAST", &CTFPlayerManageBuilderWeaponsOBJ_LAST);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1);

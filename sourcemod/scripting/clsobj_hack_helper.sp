@@ -1,52 +1,54 @@
 #include <sourcemod>
 #include <clsobj_hack>
-#include <sendproxy>
+#include <proxysend>
 #include <sdkhooks>
 #include <tf2_stocks>
 
+//#define DEBUG
+
 native int BuilderGetNumBuildables(int entity);
-native int BuilderGetBuildableIndex(int entity, int index);
-native int BuilderIndexByRepresentative(int entity, int type);
-native int BuilderRepresentativeByIndex(int entity, int type);
-native void BuilderSetAsBuildableInternal(int entity, int type, bool value);
+native TFObjectType BuilderGetBuildableIndex(int entity, int index);
+native TFObjectType BuilderIndexByRepresentative(int entity, TFObjectType type);
+native TFObjectType BuilderRepresentativeByIndex(int entity, TFObjectType type);
+native void BuilderSetAsBuildableInternal(int entity, TFObjectType type, bool value);
 
 int m_hMyWeaponsLen = -1;
 bool bSentByPlugin[MAXPLAYERS+1] = {false, ...};
 
 ConVar tf_cheapobjects = null;
 
+bool late_loaded;
+
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
 	CreateNative("BuilderSetAsBuildable", BuilderSetAsBuildableNative);
+	late_loaded = late;
 	return APLRes_Success;
 }
 
 int BuilderSetAsBuildableNative(Handle plugin, int params)
 {
 	int entity = GetNativeCell(1);
-	int type = GetNativeCell(2);
+	TFObjectType type = GetNativeCell(2);
 	bool value = GetNativeCell(3);
 
 	BuilderSetAsBuildableInternal(entity, type, value);
 
-	SendProxy_Unhook(entity, "m_iObjectType", ProxyObjectType);
+	proxysend_unhook(entity, "m_iObjectType", ProxyObjectTypeBuilder);
+	proxysend_unhook(entity, "m_aBuildableObjectTypes", ProxyBuildableObjectTypes);
 
-	for(int i = 0; i < OBJ_LAST; ++i) {
-		SendProxy_UnhookArrayProp(entity, "m_aBuildableObjectTypes", i, Prop_Int, ProxyBuildableObjectTypes);
-	}
+#if defined DEBUG
+	PrintToServer("BuilderSetAsBuildable %i %i %i", entity, type, value);
+#endif
 
 	if(value) {
 		if(type > OBJ_LAST) {
-			SendProxy_Hook(entity, "m_iObjectType", Prop_Int, ProxyObjectType);
-
-			CObjectInfo info = CObjectInfo.Get(type);
-			int rep = info.GetInt("m_nRepresentative");
-
-			if(rep != OBJ_LAST) {
-				SendProxy_HookArrayProp(entity, "m_aBuildableObjectTypes", rep, Prop_Int, ProxyBuildableObjectTypes);
-			}
+			proxysend_hook(entity, "m_iObjectType", ProxyObjectTypeBuilder, false);
+			proxysend_hook(entity, "m_aBuildableObjectTypes", ProxyBuildableObjectTypes, false);
 		}
 	}
+
+	return 0;
 }
 
 public void OnPluginStart()
@@ -58,8 +60,38 @@ public void OnPluginStart()
 	RegAdminCmd("sm_refreshbuilder", sm_refreshbuilder, ADMFLAG_GENERIC);
 	RegAdminCmd("sm_dumpbuilder", sm_dumpbuilder, ADMFLAG_GENERIC);
 
+#if defined DEBUG
+	HookEvent("player_builtobject", player_builtobject);
+#endif
+
 	tf_cheapobjects = FindConVar("tf_cheapobjects");
+
+	if(late_loaded) {
+		int entity = -1;
+		char classname[64];
+		while((entity = FindEntityByClassname(entity, "*")) != -1) {
+			GetEntityClassname(entity, classname, sizeof(classname));
+			OnEntityCreated(entity, classname);
+
+			if(HasEntProp(entity, Prop_Send, "m_aBuildableObjectTypes")) {
+				BuilderOnSpawnPost(entity);
+			} else if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
+				ObjectOnSpawnPost(entity);
+			}
+		}
+	}
 }
+
+#if defined DEBUG
+static void player_builtobject(Event event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	TFObjectType type = view_as<TFObjectType>(event.GetInt("object"));
+	int entity = event.GetInt("index");
+
+	PrintToServer("player_builtobject %i %i %i", client, type, entity);
+}
+#endif
 
 Action sm_dumpbuilder(int client, int args)
 {
@@ -83,8 +115,9 @@ Action sm_dumpbuilder(int client, int args)
 		int m_iObjectType = GetEntProp(weapon, Prop_Send, "m_iObjectType");
 		PrintToConsole(client, "slot: %i - ent: %i - %s:\n  m_iObjectType = %i", i, weapon, classname, m_iObjectType);
 		for(int j = 0, len = BuilderGetNumBuildables(weapon); j < len; ++j) {
-			bool buildable = BuilderIsBuildable(weapon, j);
-			PrintToConsole(client, "  m_aBuildableObjectTypes[%i] = %i", j, buildable);
+			TFObjectType type = BuilderGetBuildableIndex(weapon, j);
+			bool buildable = BuilderIsBuildable(weapon, view_as<TFObjectType>(j));
+			PrintToConsole(client, "  m_aBuildableObjectTypes[%i, %i] = %i", j, type, buildable);
 		}
 	}
 
@@ -133,7 +166,7 @@ Action sm_refreshbuilder(int client, int args)
 			playerclass = TF2_GetPlayerClass(target);
 		}
 
-		ManageBuilderWeaponsByIndex(target, view_as<int>(playerclass));
+		ManageBuilderWeaponsByIndex(target, playerclass);
 	}
 
 	return Plugin_Handled;
@@ -159,7 +192,7 @@ void PrintObjectInfoFloat(CObjectInfo info, const char[] name)
 
 void PrintObjectInfoRepresentative(CObjectInfo info)
 {
-	int m_nRepresentative = info.GetInt("m_nRepresentative");
+	TFObjectType m_nRepresentative = view_as<TFObjectType>(info.GetInt("m_nRepresentative"));
 
 	CObjectInfo rep_info = CObjectInfo.Get(m_nRepresentative);
 
@@ -241,7 +274,7 @@ Action sm_dumpobjsinfo(int client, int args)
 
 	if(args == 0) {
 		for(int i = 0; i < num; ++i) {
-			CObjectInfo info = CObjectInfo.Get(i);
+			CObjectInfo info = CObjectInfo.Get(view_as<TFObjectType>(i));
 			DumpObjectInfo(info);
 		}
 	} else if(args == 1) {
@@ -249,8 +282,8 @@ Action sm_dumpobjsinfo(int client, int args)
 		GetCmdArg(1, arg, sizeof(arg));
 
 		if(StrEqual(arg, "custom")) {
-			for(int i = OBJ_LAST+1; i < num; ++i) {
-				CObjectInfo info = CObjectInfo.Get(i);
+			for(int i = (view_as<int>(OBJ_LAST)+1); i < num; ++i) {
+				CObjectInfo info = CObjectInfo.Get(view_as<TFObjectType>(i));
 				DumpObjectInfo(info);
 			}
 		} else {
@@ -258,7 +291,7 @@ Action sm_dumpobjsinfo(int client, int args)
 			int ret = StringToIntEx(arg, i);
 			if(ret != 0) {
 				if(i >= 0 && i < num) {
-					CObjectInfo info = CObjectInfo.Get(i);
+					CObjectInfo info = CObjectInfo.Get(view_as<TFObjectType>(i));
 					DumpObjectInfo(info);
 				} else {
 					ReplyToCommand(client, "invalid index %i", i);
@@ -309,14 +342,19 @@ Action HandleBuildCommand(int client, const char[] command, int args)
 			continue;
 		}
 
-		int type = GetCmdArgInt(1);
+		TFObjectType type = view_as<TFObjectType>(GetCmdArgInt(1));
 
-		int m_iObjectType = BuilderIndexByRepresentative(weapon, type);
-		if(m_iObjectType == -1) {
-			continue;
-		}
+		TFObjectType m_iObjectType = BuilderIndexByRepresentative(weapon, type);
 
 		int mode = args >= 3 ? GetCmdArgInt(2) : 0;
+
+	#if defined DEBUG
+		PrintToServer("HandleBuildCommand %i %s %i %i %i", client, command, type, mode, m_iObjectType);
+	#endif
+
+		if(m_iObjectType == BUILDER_INVALID_OBJECT) {
+			continue;
+		}
 
 		bSentByPlugin[client] = true;
 		ClientCommand(client, "%s %i %i", command, m_iObjectType, mode);
@@ -331,51 +369,92 @@ Action command_build(int client, const char[] command, int args)
 	return HandleBuildCommand(client, command, args);
 }
 
-Action ProxyObjectType(int iEntity, const char[] cPropName, int &iValue, int iElement)
+Action ProxyObjectType(int &iValue)
 {
 	if(iValue >= CObjectInfo.Count()) {
 		iValue = 0;
 		return Plugin_Changed;
 	} else {
-		CObjectInfo info = CObjectInfo.Get(iValue);
+		CObjectInfo info = CObjectInfo.Get(view_as<TFObjectType>(iValue));
 		iValue = info.GetInt("m_nRepresentative");
 		return Plugin_Changed;
 	}
 }
 
+Action ProxyObjectTypeObject(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+{
+#if defined DEBUG
+	PrintToServer("ProxyObjectTypeObject %i %i", iEntity, iValue);
+#endif
+	return ProxyObjectType(iValue);
+}
+
+Action ProxyObjectTypeBuilder(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+{
+#if defined DEBUG && 0
+	PrintToServer("ProxyObjectTypeBuilder %i %i", iEntity, iValue);
+#endif
+	return ProxyObjectType(iValue);
+}
+
+public void OnGameFrame()
+{
+	int entity = -1;
+	while((entity = FindEntityByClassname(entity, "*")) != -1) {
+		if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
+			ChangeEdictState(entity);
+		}
+	}
+}
+
 void ObjectOnSpawnPost(int entity)
 {
-	int m_iObjectType = GetEntProp(entity, Prop_Send, "m_iObjectType");
+	TFObjectType m_iObjectType = view_as<TFObjectType>(GetEntProp(entity, Prop_Send, "m_iObjectType"));
 	if(m_iObjectType > OBJ_LAST) {
-		SendProxy_Hook(entity, "m_iObjectType", Prop_Int, ProxyObjectType);
+		proxysend_hook(entity, "m_iObjectType", ProxyObjectTypeObject, false);
 	}
+
+#if defined DEBUG
+	PrintToServer("ObjectOnSpawnPost %i %i", entity, m_iObjectType);
+#endif
 
 	SDKUnhook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
 }
 
-Action ProxyBuildableObjectTypes(int iEntity, const char[] cPropName, int &iValue, int iElement)
+Action ProxyBuildableObjectTypes(int iEntity, const char[] cPropName, bool &iValue, int iElement, int client)
 {
-	iValue = 1;
-	return Plugin_Changed;
+	Action ret = Plugin_Continue;
+
+	if(BuilderIndexByRepresentative(iEntity, view_as<TFObjectType>(iElement)) != BUILDER_INVALID_OBJECT) {
+		iValue = true;
+		ret = Plugin_Changed;
+	}
+
+#if defined DEBUG && 0
+	PrintToServer("ProxyBuildableObjectTypes %i %i", iElement, iValue);
+	if(iElement == 3) {
+		PrintToServer("\n");
+	}
+#endif
+
+	return ret;
 }
 
 void BuilderOnSpawnPost(int entity)
 {
-	for(int i = 0; i < OBJ_LAST; ++i) {
-		if(BuilderIndexByRepresentative(entity, i) == -1) {
-			continue;
-		}
+	proxysend_hook(entity, "m_iObjectType", ProxyObjectTypeBuilder, false);
+	proxysend_hook(entity, "m_aBuildableObjectTypes", ProxyBuildableObjectTypes, false);
 
-		SendProxy_HookArrayProp(entity, "m_aBuildableObjectTypes", i, Prop_Int, ProxyBuildableObjectTypes);
-	}
+#if defined DEBUG
+	PrintToServer("BuilderOnSpawnPost %i", entity);
+#endif
 }
 
 public void OnEntityCreated(int entity, const char[] classname)
 {
-	if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
-		SDKHook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
-	}
 	if(HasEntProp(entity, Prop_Send, "m_aBuildableObjectTypes")) {
 		SDKHook(entity, SDKHook_SpawnPost, BuilderOnSpawnPost);
+	} else if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
+		SDKHook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
 	}
 }

@@ -26,11 +26,15 @@
 			}
 			"CBaseObject::GetBaseHealth"
 			{
-				"linux" "381"
+				"linux" "384"
 			}
 			"CBaseEntity::Precache"
 			{
 				"linux" "24"
+			}
+			"CBaseEntity::Spawn"
+			{
+				"linux" "23"
 			}
 		}
 		"Signatures"
