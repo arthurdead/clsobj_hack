@@ -184,6 +184,16 @@
 				"library" "server"
 				"linux" "@_ZN9CTFPlayer20ManageRegularWeaponsEP19TFPlayerClassData_t"
 			}
+			"CBaseObject::GetMaxUpgradeLevel"
+			{
+				"library" "server"
+				"linux" "@_ZN11CBaseObject18GetMaxUpgradeLevelEv"
+			}
+			"CTFPlayer::GetNumObjects"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer13GetNumObjectsEii"
+			}
 		}
 	}
 }

@@ -2997,6 +2997,7 @@ DETOUR_DECL_MEMBER1(CTFPlayerManageBuilderWeapons, void, TFPlayerClassData_t *, 
 }
 
 CDetour *pCBaseObjectCanBeUpgraded = nullptr;
+CDetour *pCBaseObjectGetMaxUpgradeLevel = nullptr;
 
 CBaseEntity *pLastPlayer = nullptr;
 
@@ -3006,6 +3007,21 @@ DETOUR_DECL_MEMBER1(CBaseObjectCanBeUpgraded, bool, CBaseEntity *, pPlayer)
 	bool ret = DETOUR_MEMBER_CALL(CBaseObjectCanBeUpgraded)(pPlayer);
 	pLastPlayer = nullptr;
 	return ret;
+}
+
+#define OBJ_MAX_UPGRADE_LEVEL 3
+
+DETOUR_DECL_MEMBER0(CBaseObjectGetMaxUpgradeLevel, int)
+{
+	CBaseObject *obj{(CBaseObject *)this};
+
+	int m_iObjectType = obj->GetObjectType();
+	if(m_iObjectType < 0 || m_iObjectType >= g_ObjectInfos.size()) {
+		return OBJ_MAX_UPGRADE_LEVEL;
+	} else {
+		CObjectInfo *pInfo = g_ObjectInfos[m_iObjectType].get();
+		return pInfo->m_MaxUpgradeLevel;
+	}
 }
 
 DETOUR_DECL_STATIC2(ClassCanBuild, bool, int, iClass, int, iObjectType)
@@ -3141,25 +3157,64 @@ DETOUR_DECL_MEMBER2(CTFPlayerCanBuild, int, int, iObjectType, int, iObjectMode)
 
 CDetour *pInternalCalculateObjectCost = nullptr;
 
+int CalculateObjectCost( int iObjectType, int iNumberOfObjects, bool bLast )
+{
+	if ( tf_cheapobjects->GetBool() )
+	{
+		return 0;
+	}
+
+	// Find out how much the next object should cost
+	if ( bLast )
+	{
+		iNumberOfObjects = MAX(0,iNumberOfObjects-1);
+	}
+
+	int iCost = g_ObjectInfos[ iObjectType ]->m_Cost;
+
+	// If a cost is negative, it means the first object of that type is free, and then
+	// it counts up as normal, using the negative value.
+	if ( iCost < 0 )
+	{
+		if ( iNumberOfObjects == 0 )
+			return 0;
+		iCost *= -1;
+		iNumberOfObjects--;
+	}
+
+	// Calculate the cost based upon the number of objects
+	for ( int i = 0; i < iNumberOfObjects; i++ )
+	{
+		iCost *= g_ObjectInfos[ iObjectType ]->m_CostMultiplierPerInstance;
+	}
+
+	return iCost;
+}
+
+void *CTFPlayerGetNumObjectsAddr = nullptr;
+
+CBaseEntity *last_player = nullptr;
+
+#define BUILDING_MODE_ANY -1
+
 DETOUR_DECL_STATIC1(InternalCalculateObjectCost, int, int, iObjectType)
 {
-#if 1
-	int ret = 0;
-	
-	if(!tf_cheapobjects->GetBool()) {
-		ret = g_ObjectInfos[iObjectType]->m_Cost;
+	int iNumberOfObjects{0};
+	if(last_player != nullptr) {
+		iNumberOfObjects = call_mfunc<int, CBaseEntity, int, int>(last_player, CTFPlayerGetNumObjectsAddr, iObjectType, BUILDING_MODE_ANY);
 	}
-#else
-	int ret = DETOUR_STATIC_CALL(InternalCalculateObjectCost)(iObjectType);
-#endif
-	return ret;
+	return CalculateObjectCost(iObjectType, iNumberOfObjects, false);
 }
 
 CDetour *pCTFPlayerSharedCalculateObjectCost = nullptr;
 
 DETOUR_DECL_MEMBER2(CTFPlayerSharedCalculateObjectCost, int, CBaseEntity *, pBuilder, int, iObjectType)
 {
+	CBaseEntity *pPlayer = (CBaseEntity *)((unsigned char *)this - m_PlayerClassOffset);
+
+	last_player = pPlayer;
 	int ret = DETOUR_MEMBER_CALL(CTFPlayerSharedCalculateObjectCost)(pBuilder, iObjectType);
+	last_player = nullptr;
 	return ret;
 }
 
@@ -3226,6 +3281,9 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	pCBaseObjectCanBeUpgraded = DETOUR_CREATE_MEMBER(CBaseObjectCanBeUpgraded, "CBaseObject::CanBeUpgraded")
 	pCBaseObjectCanBeUpgraded->EnableDetour();
+
+	pCBaseObjectGetMaxUpgradeLevel = DETOUR_CREATE_MEMBER(CBaseObjectGetMaxUpgradeLevel, "CBaseObject::GetMaxUpgradeLevel")
+	pCBaseObjectGetMaxUpgradeLevel->EnableDetour();
 	
 	pCTFPlayerCanBuild = DETOUR_CREATE_MEMBER(CTFPlayerCanBuild, "CTFPlayer::CanBuild")
 	pCTFPlayerCanBuild->EnableDetour();
@@ -3286,6 +3344,8 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 
 	g_pGameConf->GetMemSig("CTFPlayer::ManageRegularWeaponsLegacy", &CTFPlayerManageRegularWeaponsLegacyAddr);
 
+	g_pGameConf->GetMemSig("CTFPlayer::GetNumObjects", &CTFPlayerGetNumObjectsAddr);
+
 	g_pGameConf->GetMemSig("GetWeaponId", &GetWeaponIdAddr);
 	g_pGameConf->GetMemSig("GetAmmoName", &GetAmmoNameAddr);
 	
@@ -3334,6 +3394,7 @@ void Sample::SDK_OnUnload()
 	pCTFPlayerGetLoadoutItem->Destroy();
 	pCTFPlayerManageBuilderWeapons->Destroy();
 	pCBaseObjectCanBeUpgraded->Destroy();
+	pCBaseObjectGetMaxUpgradeLevel->Destroy();
 	pCTFPlayerCanBuild->Destroy();
 	pInternalCalculateObjectCost->Destroy();
 	pCTFPlayerSharedCalculateObjectCost->Destroy();
