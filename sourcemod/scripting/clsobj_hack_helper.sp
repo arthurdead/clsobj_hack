@@ -403,16 +403,6 @@ Action ProxyObjectTypeBuilder(int iEntity, const char[] cPropName, int &iValue, 
 	return ProxyObjectType(iValue);
 }
 
-public void OnGameFrame()
-{
-	int entity = -1;
-	while((entity = FindEntityByClassname(entity, "*")) != -1) {
-		if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
-			ChangeEdictState(entity);
-		}
-	}
-}
-
 void ObjectOnSpawnPost(int entity)
 {
 	TFObjectType m_iObjectType = view_as<TFObjectType>(GetEntProp(entity, Prop_Send, "m_iObjectType"));
