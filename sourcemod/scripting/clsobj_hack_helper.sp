@@ -67,6 +67,12 @@ public void OnPluginStart()
 	tf_cheapobjects = FindConVar("tf_cheapobjects");
 
 	if(late_loaded) {
+		for(int i = 1; i <= MaxClients; ++i) {
+			if(IsClientInGame(i)) {
+				OnClientPutInServer(i);
+			}
+		}
+
 		int entity = -1;
 		char classname[64];
 		while((entity = FindEntityByClassname(entity, "*")) != -1) {
@@ -447,6 +453,31 @@ void BuilderOnSpawnPost(int entity)
 
 #if defined DEBUG
 	PrintToServer("BuilderOnSpawnPost %i", entity);
+#endif
+}
+
+Action ProxyPlayerClass(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+{
+	if(iValue >= TFPlayerClassData.Count()) {
+		iValue = view_as<int>(TFClass_Unknown);
+		return Plugin_Changed;
+	} else {
+		TFPlayerClassData info = TFPlayerClassData.Get(view_as<TFClassType>(iValue));
+		iValue = info.GetInt("m_nRepresentative");
+	#if defined DEBUG && 0
+		PrintToServer("ProxyPlayerClass %i", iValue);
+	#endif
+		return Plugin_Changed;
+	}
+}
+
+public void OnClientPutInServer(int client)
+{
+	proxysend_hook(client, "m_iClass", ProxyPlayerClass, false);
+	proxysend_hook(client, "m_iDesiredPlayerClass", ProxyPlayerClass, false);
+
+#if defined DEBUG
+	PrintToServer("OnClientPutInServer %i", client);
 #endif
 }
 

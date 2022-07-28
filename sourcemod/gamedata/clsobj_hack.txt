@@ -164,6 +164,26 @@
 				"library" "server"
 				"linux" "@_ZN11CBaseEntity13PrecacheModelEPKcb"
 			}
+			"GetWeaponId"
+			{
+				"library" "server"
+				"linux" "@_Z11GetWeaponIdPKc"
+			}
+			"GetAmmoName"
+			{
+				"library" "server"
+				"linux" "@_Z11GetAmmoNamei"
+			}
+			"CTFPlayer::ManageRegularWeaponsLegacy"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer26ManageRegularWeaponsLegacyEP19TFPlayerClassData_t"
+			}
+			"CTFPlayer::ManageRegularWeapons"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer20ManageRegularWeaponsEP19TFPlayerClassData_t"
+			}
 		}
 	}
 }

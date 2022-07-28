@@ -758,6 +758,8 @@ struct TFPlayerClassData_t
 	// sounds
 	char		m_szDeathSound[ DEATH_SOUND_TOTAL ][MAX_PLAYERCLASS_SOUND_LENGTH];
 
+	int m_nRepresentative = TF_CLASS_UNDEFINED;
+
 	int m_nIndex = TF_CLASS_COUNT_ALL;
 	
 	bool m_bCustom = false;
@@ -935,6 +937,7 @@ TFPlayerClassDataCustom *TFPlayerClassData_t::clone()
 	
 	ret->m_vecThirdPersonOffset = m_vecThirdPersonOffset;
 	
+	ret->m_nRepresentative = m_nRepresentative;
 	ret->m_bCustom = m_bCustom;
 	
 	return ret;
@@ -1080,142 +1083,27 @@ void TFPlayerClassData_t::Parse( const char *szName )
 	}
 }
 
-const char *g_aAmmoNames[] =
+void *GetWeaponIdAddr = nullptr;
+void *GetAmmoNameAddr = nullptr;
+
+template <typename T>
+T void_to_func(void *ptr)
 {
-	"DUMMY AMMO",
-	"TF_AMMO_PRIMARY",
-	"TF_AMMO_SECONDARY",
-	"TF_AMMO_METAL",
-	"TF_AMMO_GRENADES1",
-	"TF_AMMO_GRENADES2",
-	"TF_AMMO_GRENADES3"
-};
+	union { T f; void *p; };
+	p = ptr;
+	return f;
+}
 
 const char *GetAmmoName( int iAmmoType )
 {
-	ETFAmmoType eAmmoType = (ETFAmmoType)iAmmoType;
-	return g_aAmmoNames[ eAmmoType ];
+	return (void_to_func<const char *(*)(int)>(GetAmmoNameAddr))(iAmmoType);
 }
-
-const char *g_aWeaponNames[] =
-{
-	"TF_WEAPON_NONE",
-	"TF_WEAPON_BAT",
-	"TF_WEAPON_BAT_WOOD",
-	"TF_WEAPON_BOTTLE", 
-	"TF_WEAPON_FIREAXE",
-	"TF_WEAPON_CLUB",
-	"TF_WEAPON_CROWBAR",
-	"TF_WEAPON_KNIFE",
-	"TF_WEAPON_FISTS",
-	"TF_WEAPON_SHOVEL",
-	"TF_WEAPON_WRENCH",
-	"TF_WEAPON_BONESAW",
-	"TF_WEAPON_SHOTGUN_PRIMARY",
-	"TF_WEAPON_SHOTGUN_SOLDIER",
-	"TF_WEAPON_SHOTGUN_HWG",
-	"TF_WEAPON_SHOTGUN_PYRO",
-	"TF_WEAPON_SCATTERGUN",
-	"TF_WEAPON_SNIPERRIFLE",
-	"TF_WEAPON_MINIGUN",
-	"TF_WEAPON_SMG",
-	"TF_WEAPON_SYRINGEGUN_MEDIC",
-	"TF_WEAPON_TRANQ",
-	"TF_WEAPON_ROCKETLAUNCHER",
-	"TF_WEAPON_GRENADELAUNCHER",
-	"TF_WEAPON_PIPEBOMBLAUNCHER",
-	"TF_WEAPON_FLAMETHROWER",
-	"TF_WEAPON_GRENADE_NORMAL",
-	"TF_WEAPON_GRENADE_CONCUSSION",
-	"TF_WEAPON_GRENADE_NAIL",
-	"TF_WEAPON_GRENADE_MIRV",
-	"TF_WEAPON_GRENADE_MIRV_DEMOMAN",
-	"TF_WEAPON_GRENADE_NAPALM",
-	"TF_WEAPON_GRENADE_GAS",
-	"TF_WEAPON_GRENADE_EMP",
-	"TF_WEAPON_GRENADE_CALTROP",
-	"TF_WEAPON_GRENADE_PIPEBOMB",
-	"TF_WEAPON_GRENADE_SMOKE_BOMB",
-	"TF_WEAPON_GRENADE_HEAL",
-	"TF_WEAPON_GRENADE_STUNBALL",
-	"TF_WEAPON_GRENADE_JAR",
-	"TF_WEAPON_GRENADE_JAR_MILK",
-	"TF_WEAPON_PISTOL",
-	"TF_WEAPON_PISTOL_SCOUT",
-	"TF_WEAPON_REVOLVER",
-	"TF_WEAPON_NAILGUN",
-	"TF_WEAPON_PDA",
-	"TF_WEAPON_PDA_ENGINEER_BUILD",
-	"TF_WEAPON_PDA_ENGINEER_DESTROY",
-	"TF_WEAPON_PDA_SPY",
-	"TF_WEAPON_BUILDER",
-	"TF_WEAPON_MEDIGUN",
-	"TF_WEAPON_GRENADE_MIRVBOMB",
-	"TF_WEAPON_FLAMETHROWER_ROCKET",
-	"TF_WEAPON_GRENADE_DEMOMAN",
-	"TF_WEAPON_SENTRY_BULLET",
-	"TF_WEAPON_SENTRY_ROCKET",
-	"TF_WEAPON_DISPENSER",
-	"TF_WEAPON_INVIS",
-	"TF_WEAPON_FLAREGUN",
-	"TF_WEAPON_LUNCHBOX",
-	"TF_WEAPON_JAR",
-	"TF_WEAPON_COMPOUND_BOW",
-	"TF_WEAPON_BUFF_ITEM",
-	"TF_WEAPON_PUMPKIN_BOMB",
-	"TF_WEAPON_SWORD",
-	"TF_WEAPON_ROCKETLAUNCHER_DIRECTHIT",
-	"TF_WEAPON_LIFELINE",
-	"TF_WEAPON_LASER_POINTER",
-	"TF_WEAPON_DISPENSER_GUN",
-	"TF_WEAPON_SENTRY_REVENGE",
-	"TF_WEAPON_JAR_MILK",
-	"TF_WEAPON_HANDGUN_SCOUT_PRIMARY",
-	"TF_WEAPON_BAT_FISH",
-	"TF_WEAPON_CROSSBOW",
-	"TF_WEAPON_STICKBOMB",
-	"TF_WEAPON_HANDGUN_SCOUT_SECONDARY",
-	"TF_WEAPON_SODA_POPPER",
-	"TF_WEAPON_SNIPERRIFLE_DECAP",
-	"TF_WEAPON_RAYGUN",
-	"TF_WEAPON_PARTICLE_CANNON",
-	"TF_WEAPON_MECHANICAL_ARM",
-	"TF_WEAPON_DRG_POMSON",
-	"TF_WEAPON_BAT_GIFTWRAP",
-	"TF_WEAPON_GRENADE_ORNAMENT_BALL",
-	"TF_WEAPON_FLAREGUN_REVENGE",
-	"TF_WEAPON_PEP_BRAWLER_BLASTER",
-	"TF_WEAPON_CLEAVER",
-	"TF_WEAPON_GRENADE_CLEAVER",
-	"TF_WEAPON_STICKY_BALL_LAUNCHER",
-	"TF_WEAPON_GRENADE_STICKY_BALL",
-	"TF_WEAPON_SHOTGUN_BUILDING_RESCUE",
-	"TF_WEAPON_CANNON",
-	"TF_WEAPON_THROWABLE",
-	"TF_WEAPON_GRENADE_THROWABLE",
-	"TF_WEAPON_PDA_SPY_BUILD",
-	"TF_WEAPON_GRENADE_WATERBALLOON",
-	"TF_WEAPON_HARVESTER_SAW",
-	"TF_WEAPON_SPELLBOOK",
-	"TF_WEAPON_SPELLBOOK_PROJECTILE",
-	"TF_WEAPON_SNIPERRIFLE_CLASSIC",
-	"TF_WEAPON_PARACHUTE",
-	"TF_WEAPON_GRAPPLINGHOOK",
-	"TF_WEAPON_PASSTIME_GUN",
-	"TF_WEAPON_CHARGED_SMG",
-};
 
 #define TF_WEAPON_NONE 0
 
 int GetWeaponId( const char *pszWeaponName )
 {
-	for ( int iWeapon = 0; iWeapon < ARRAYSIZE( g_aWeaponNames ); ++iWeapon )
-	{
-		if ( !Q_stricmp( pszWeaponName, g_aWeaponNames[iWeapon] ) )
-			return iWeapon;
-	}
-
-	return TF_WEAPON_NONE;
+	return (void_to_func<int(*)(const char *)>(GetWeaponIdAddr))(pszWeaponName);
 }
 
 TFPlayerClassData_t::TFPlayerClassData_t()
@@ -1319,6 +1207,8 @@ void TFPlayerClassData_t::ParseData( KeyValues *pKeyValuesData )
 	Q_strncpy( m_szDeathSound[ DEATH_SOUND_MELEE ], pKeyValuesData->GetString( "sound_melee_death", "Player.MeleeDeath" ), MAX_PLAYERCLASS_SOUND_LENGTH );
 	Q_strncpy( m_szDeathSound[ DEATH_SOUND_EXPLOSION ], pKeyValuesData->GetString( "sound_explosion_death", "Player.ExplosionDeath" ), MAX_PLAYERCLASS_SOUND_LENGTH );
 
+	m_nRepresentative = pKeyValuesData->GetInt( "Representative", TF_CLASS_UNDEFINED );
+
 	// The file has been parsed.
 	m_bParsed = true;
 }
@@ -1341,8 +1231,8 @@ bool DoClassDataMgrInit()
 	for ( int iClass = 1; iClass < TF_CLASS_COUNT_ALL; ++iClass )
 	{
 		m_aTFPlayerClassData[iClass].reset(new TFPlayerClassData_t{});
-		pClassData = m_aTFPlayerClassData[iClass].get();
-		pClassData->Parse( s_aPlayerClassFiles[iClass] );
+		m_aTFPlayerClassData[iClass]->Parse( s_aPlayerClassFiles[iClass] );
+		m_aTFPlayerClassData[iClass]->m_nRepresentative = iClass;
 	}
 	
 	UpdateClassOffsets();
@@ -1424,7 +1314,6 @@ bool Sample::SDK_OnMetamodLoad(ISmmAPI *ismm, char *error, size_t maxlen, bool l
 	tf_cheapobjects = g_pCVar->FindVar("tf_cheapobjects");
 	
 	DoLoadObjectInfos(filesystem);
-	DoClassDataMgrInit();
 	
 	return true;
 }
@@ -2166,6 +2055,8 @@ static cell_t TFPlayerClassData_tSetInt(IPluginContext *pContext, const cell_t *
 		pInfo->m_bDontDoAirwalk = params[3];
 	} else if(Q_stricmp(name, "m_bDontDoNewJump") == 0) {
 		pInfo->m_bDontDoNewJump = params[3];
+	} else if(Q_stricmp(name, "m_nRepresentative") == 0) {
+		pInfo->m_nRepresentative = params[3];
 	} else if(Q_stricmp(name, "m_bParsed") == 0) {
 		pInfo->m_bParsed = params[3];
 	}
@@ -2242,6 +2133,8 @@ static cell_t TFPlayerClassData_tGetInt(IPluginContext *pContext, const cell_t *
 		return pInfo->m_bDontDoAirwalk;
 	} else if(Q_stricmp(name, "m_bDontDoNewJump") == 0) {
 		return pInfo->m_bDontDoNewJump;
+	} else if(Q_stricmp(name, "m_nRepresentative") == 0) {
+		return pInfo->m_nRepresentative;
 	} else if(Q_stricmp(name, "m_bParsed") == 0) {
 		return pInfo->m_bParsed;
 	}
@@ -3270,6 +3163,22 @@ DETOUR_DECL_MEMBER2(CTFPlayerSharedCalculateObjectCost, int, CBaseEntity *, pBui
 	return ret;
 }
 
+CDetour *pCTFPlayerManageRegularWeapons = nullptr;
+
+void *CTFPlayerManageRegularWeaponsLegacyAddr = nullptr;
+
+DETOUR_DECL_MEMBER1(CTFPlayerManageRegularWeapons, void, TFPlayerClassData_t *, pData)
+{
+	CBaseEntity *pPlayer{(CBaseEntity *)this};
+	int m_iClass = *(int *)((unsigned char *)pPlayer + m_iClassOffset);
+
+	DETOUR_MEMBER_CALL(CTFPlayerManageRegularWeapons)(pData);
+
+	if(m_iClass >= TF_CLASS_COUNT) {
+		call_mfunc<void, CBaseEntity, TFPlayerClassData_t *>(pPlayer, CTFPlayerManageRegularWeaponsLegacyAddr, pData);
+	}
+}
+
 bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 {
 	gameconfs->LoadGameConfigFile("clsobj_hack", &g_pGameConf, error, maxlen);
@@ -3332,6 +3241,9 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	pInternalCalculateObjectCost = DETOUR_CREATE_STATIC(InternalCalculateObjectCost, "InternalCalculateObjectCost")
 	pInternalCalculateObjectCost->EnableDetour();
+
+	pCTFPlayerManageRegularWeapons = DETOUR_CREATE_MEMBER(CTFPlayerManageRegularWeapons, "CTFPlayer::ManageRegularWeapons")
+	pCTFPlayerManageRegularWeapons->EnableDetour();
 	
 	sm_sendprop_info_t info{};
 	gamehelpers->FindSendPropInfo("CTFWeaponBuilder", "m_aBuildableObjectTypes", &info);
@@ -3363,7 +3275,7 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1);
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2);
 	g_pGameConf->GetOffset("CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER", &CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER);
-	;
+	
 	g_pGameConf->GetMemSig("CTFPlayer::ManageBuilderWeapons", &CTFPlayerManageBuilderWeapons);
 	g_pGameConf->GetMemSig("CTFPlayer::CanBuild", &CTFPlayerCanBuild);
 	g_pGameConf->GetMemSig("CTFPlayer::PrecachePlayerModels", &CTFPlayerPrecachePlayerModels);
@@ -3371,12 +3283,19 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
 	g_pGameConf->GetMemSig("CTFWeaponBase::Precache", &CTFWeaponBasePrecache);
 	g_pGameConf->GetMemSig("CBaseEntity::PrecacheModel", &CBaseEntityPrecacheModel);
+
+	g_pGameConf->GetMemSig("CTFPlayer::ManageRegularWeaponsLegacy", &CTFPlayerManageRegularWeaponsLegacyAddr);
+
+	g_pGameConf->GetMemSig("GetWeaponId", &GetWeaponIdAddr);
+	g_pGameConf->GetMemSig("GetAmmoName", &GetAmmoNameAddr);
 	
 	SourceHook::SetMemAccess(CTFPlayerManageBuilderWeapons, CTFPlayerManageBuilderWeaponsOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerCanBuild, CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerPrecachePlayerModels, CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	
 	g_bOffsetsInited = true;
+
+	DoClassDataMgrInit();
 	
 	UpdateObjectOffsets();
 	UpdateClassOffsets();
@@ -3398,6 +3317,7 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 
 void Sample::SDK_OnUnload()
 {
+	pCTFPlayerManageRegularWeapons->Destroy();
 	pLoadObjectInfos->Destroy();
 	pGetObjectInfo->Destroy();
 	pGetBuildableId->Destroy();
