@@ -14,6 +14,10 @@
 			}
 			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2"
 			{
+				"linux" "125"
+			}
+			"CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::3"
+			{
 				"linux" "331"
 			}
 			"CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER"
@@ -35,6 +39,18 @@
 			"CBaseEntity::Spawn"
 			{
 				"linux" "23"
+			}
+			"CBaseObject::GetMaxUpgradeLevel"
+			{
+				"linux" "385"
+			}
+			"CBaseObject::CanBeUpgraded::OBJ_MAX_UPGRADE_LEVEL"
+			{
+				"linux" "99"
+			}
+			"CBaseObject::DoQuickBuild::OBJ_MAX_UPGRADE_LEVEL"
+			{
+				"linux" "50"
 			}
 		}
 		"Signatures"
@@ -193,6 +209,11 @@
 			{
 				"library" "server"
 				"linux" "@_ZN9CTFPlayer13GetNumObjectsEii"
+			}
+			"CBaseObject::DoQuickBuild"
+			{
+				"library" "server"
+				"linux" "@_ZN11CBaseObject12DoQuickBuildEb"
 			}
 		}
 	}
