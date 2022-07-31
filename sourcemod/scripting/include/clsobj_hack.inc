@@ -273,7 +273,7 @@ static CustomDatamap __register_object(CustomEntityFactory factory, const char[]
 	CustomDatamap datamap = CustomDatamap.from_factory(factory);
 	datamap.set_name(netname);
 
-	CustomSendtable sendtable = CustomSendtable.from_factory(factory, NULL_STRING);
+	CustomSendtable sendtable = CustomSendtable.from_factory(factory);
 	if(clienttype != BUILDER_INVALID_OBJECT) {
 		switch(clienttype) {
 			case TFObject_Sentry: sendtable.override_with("CObjectSentrygun");
