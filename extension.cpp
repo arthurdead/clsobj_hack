@@ -2218,13 +2218,13 @@ void RemoveBuilderVars(int index)
 		auto it2 = map1.begin();
 		while(it2 != map1.end()) {
 			if(it2->first == index) {
-				map1.erase(it2);
+				it2 = map1.erase(it2);
 				continue;
 			}
 			++it2;
 		}
 		if(map1.empty()) {
-			buildervarsmap.erase(it1);
+			it1 = buildervarsmap.erase(it1);
 			continue;
 		}
 		++it1;
