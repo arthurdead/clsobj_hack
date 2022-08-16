@@ -1599,22 +1599,24 @@ static cell_t TFPlayerClassData_tGetString(IPluginContext *pContext, const cell_
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
-	
+
+	size_t written = 0;
+
 	if(Q_stricmp(name, "m_szClassName") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szClassName);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szClassName, &written);
 	} else if(Q_stricmp(name, "m_szModelName") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szModelName);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szModelName, &written);
 	} else if(Q_stricmp(name, "m_szHWMModelName") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szHWMModelName);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szHWMModelName, &written);
 	} else if(Q_stricmp(name, "m_szHandModelName") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szHandModelName);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szHandModelName, &written);
 	} else if(Q_stricmp(name, "m_szLocalizableName") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szLocalizableName);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szLocalizableName, &written);
 	} else if(Q_stricmp(name, "m_szDeathSound") == 0) {
-		pContext->StringToLocal(params[3], params[4], pInfo->m_szDeathSound[params[5]]);
+		pContext->StringToLocalUTF8(params[3], params[4], pInfo->m_szDeathSound[params[5]], &written);
 	}
 	
-	return 0;
+	return written;
 }
 
 static cell_t TFPlayerClassData_tIndexget(IPluginContext *pContext, const cell_t *params)
@@ -1630,63 +1632,65 @@ static cell_t CObjectInfoGetString(IPluginContext *pContext, const cell_t *param
 	
 	char *name = nullptr;
 	pContext->LocalToString(params[2], &name);
-	
+
+	size_t written = 0;
+
 #define STROREMPTY(var) var ? var : ""
 	
 	if(Q_stricmp(name, "m_pObjectName") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pObjectName));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pObjectName), &written);
 	} else if(Q_stricmp(name, "m_pClassName") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pClassName));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pClassName), &written);
 	} else if(Q_stricmp(name, "m_pStatusName") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pStatusName));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pStatusName), &written);
 	} else if(Q_stricmp(name, "m_pBuilderWeaponName") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pBuilderWeaponName));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pBuilderWeaponName), &written);
 	} else if(Q_stricmp(name, "m_pBuilderPlacementString") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pBuilderPlacementString));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pBuilderPlacementString), &written);
 	} else if(Q_stricmp(name, "m_pViewModel") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pViewModel));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pViewModel), &written);
 	} else if(Q_stricmp(name, "m_pPlayerModel") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pPlayerModel));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pPlayerModel), &written);
 	} else if(Q_stricmp(name, "m_pExplodeSound") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pExplodeSound));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pExplodeSound), &written);
 	} else if(Q_stricmp(name, "m_pExplosionParticleEffect") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pExplosionParticleEffect));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pExplosionParticleEffect), &written);
 	} else if(Q_stricmp(name, "m_pUpgradeSound") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pUpgradeSound));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pUpgradeSound), &written);
 	} else if(Q_stricmp(name, "m_pIconActive") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pIconActive));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pIconActive), &written);
 	} else if(Q_stricmp(name, "m_pIconInactive") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pIconInactive));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pIconInactive), &written);
 	} else if(Q_stricmp(name, "m_pIconMenu") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pIconMenu));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pIconMenu), &written);
 	} else if(Q_stricmp(name, "m_pHudStatusIcon") == 0) {
-		pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_pHudStatusIcon));
+		pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_pHudStatusIcon), &written);
 	} else if(Q_stricmp(name, "m_AltModes") == 0) {
 		#define GETOBJINFO_ALTMODE(i) \
 			case i##0: { \
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszStatusName)); \
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszStatusName), &written); \
 				break; \
 			} \
 			case i##1: { \
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszModeName)); \
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszModeName), &written); \
 				break; \
 			} \
 			case i##2: { \
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszIconMenu)); \
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[i].pszIconMenu), &written); \
 				break; \
 			}
 		
 		switch(params[4]) {
 			case 0: {
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszStatusName));
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszStatusName), &written);
 				break;
 			}
 			case 1: {
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszModeName));
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszModeName), &written);
 				break;
 			}
 			case 2: {
-				pContext->StringToLocal(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszIconMenu));
+				pContext->StringToLocalUTF8(params[3], params[4], STROREMPTY(pInfo->m_AltModes[0].pszIconMenu), &written);
 				break;
 			}
 			GETOBJINFO_ALTMODE(1)
@@ -1694,7 +1698,7 @@ static cell_t CObjectInfoGetString(IPluginContext *pContext, const cell_t *param
 		}
 	}
 	
-	return 0;
+	return written;
 }
 
 static cell_t TFPlayerClassData_tSetString(IPluginContext *pContext, const cell_t *params)

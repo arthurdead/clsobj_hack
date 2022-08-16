@@ -92,7 +92,7 @@ methodmap CObjectInfo
 	public static native int Count();
 	public static native TFObjectType GetIndex(const char[] name);
 
-	public native void GetString(const char[] name, char[] value, int length, int index = 0);
+	public native int GetString(const char[] name, char[] value, int length, int index = 0);
 	public native float GetFloat(const char[] name);
 	public native int GetInt(const char[] name);
 
@@ -119,8 +119,8 @@ methodmap CObjectInfoCustom < Handle
 		public native get();
 	}
 
-	public void GetString(const char[] name, char[] value, int length, int index = 0)
-	{ this.BaseInfo.GetString(name, value, length, index); }
+	public int GetString(const char[] name, char[] value, int length, int index = 0)
+	{ return this.BaseInfo.GetString(name, value, length, index); }
 	public float GetFloat(const char[] name)
 	{ return this.BaseInfo.GetFloat(name); }
 	public int GetInt(const char[] name)
@@ -140,7 +140,7 @@ methodmap TFPlayerClassData
 	public static native int Count();
 	public static native TFClassType GetIndex(const char[] name);
 
-	public native void GetString(const char[] name, char[] value, int length, int index = 0);
+	public native int GetString(const char[] name, char[] value, int length, int index = 0);
 	public native float GetFloat(const char[] name, int index = 0);
 	public native int GetInt(const char[] name, int index = 0);
 
@@ -167,8 +167,8 @@ methodmap TFPlayerClassDataCustom < Handle
 		public native get();
 	}
 
-	public void GetString(const char[] name, char[] value, int length, int index = 0)
-	{ this.BaseData.GetString(name, value, length, index); }
+	public int GetString(const char[] name, char[] value, int length, int index = 0)
+	{ return this.BaseData.GetString(name, value, length, index); }
 	public float GetFloat(const char[] name, int index = 0)
 	{ return this.BaseData.GetFloat(name, index); }
 	public int GetInt(const char[] name, int index = 0)
