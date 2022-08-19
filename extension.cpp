@@ -2488,7 +2488,7 @@ public:
 		SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_MEMBER(this, &CBaseObject::dtor), false);
 		SH_REMOVE_MANUALHOOK(GetBaseHealth, pEntity, SH_MEMBER(this, &CBaseObject::HookGetBaseHealth), false);
 		
-		RETURN_META(MRES_IGNORED);
+		RETURN_META(MRES_HANDLED);
 	}
 	
 	int HookGetBaseHealth()
@@ -2644,7 +2644,7 @@ void HookBuilderSpawn()
 
 	buildervarsmap.emplace(ref, builder_vars_t{});
 
-	RETURN_META(MRES_IGNORED);
+	RETURN_META(MRES_HANDLED);
 }
 
 void HookBuilderDtor()
@@ -2657,9 +2657,9 @@ void HookBuilderDtor()
 	
 	SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_STATIC(HookBuilderDtor), false);
 	SH_REMOVE_MANUALHOOK(Precache, pEntity, SH_STATIC(HookBuilderPrecache), false);
-	SH_REMOVE_MANUALHOOK(Spawn, pEntity, SH_STATIC(HookBuilderSpawn), false);
+	SH_REMOVE_MANUALHOOK(Spawn, pEntity, SH_STATIC(HookBuilderSpawn), true);
 	
-	RETURN_META(MRES_IGNORED);
+	RETURN_META(MRES_HANDLED);
 }
 
 DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
@@ -2667,7 +2667,7 @@ DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
 	DETOUR_MEMBER_CALL(CTFWeaponBuilderCTOR)();
 	
 	SH_ADD_MANUALHOOK(GenericDtor, this, SH_STATIC(HookBuilderDtor), false);
-	SH_ADD_MANUALHOOK(Spawn, this, SH_STATIC(HookBuilderSpawn), false);
+	SH_ADD_MANUALHOOK(Spawn, this, SH_STATIC(HookBuilderSpawn), true);
 	//SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
 }
 
