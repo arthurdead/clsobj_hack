@@ -2244,7 +2244,7 @@ static cell_t BuilderGetNumBuildables(IPluginContext *pContext, const cell_t *pa
 	
 	cell_t ret = OBJ_LAST;
 
-	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+	int ref = gamehelpers->EntityToReference(pEntity);
 	
 	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
@@ -2264,7 +2264,7 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 	if(params[2] < OBJ_LAST) {
 		return params[2];
 	} else {
-		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+		int ref = gamehelpers->EntityToReference(pEntity);
 
 		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
@@ -2288,7 +2288,7 @@ static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_
 		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
 	}
 
-	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+	int ref = gamehelpers->EntityToReference(pEntity);
 	
 	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
@@ -2312,7 +2312,7 @@ static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_
 		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
 	}
 
-	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+	int ref = gamehelpers->EntityToReference(pEntity);
 	
 	auto it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
@@ -2338,7 +2338,7 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	if(params[2] < OBJ_LAST) {
 		return *(bool *)((unsigned char *)pEntity + m_aBuildableObjectTypesOffset + params[2]);
 	} else {
-		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+		int ref = gamehelpers->EntityToReference(pEntity);
 
 		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
@@ -2361,7 +2361,7 @@ static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *para
 	if(params[2] < OBJ_LAST) {
 		*(bool *)((unsigned char *)pEntity + m_aBuildableObjectTypesOffset + params[2]) = params[3];
 	} else {
-		int ref = gamehelpers->EntityToBCompatRef(pEntity);
+		int ref = gamehelpers->EntityToReference(pEntity);
 
 		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
@@ -2640,7 +2640,7 @@ void HookBuilderSpawn()
 {
 	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
 
-	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+	int ref = gamehelpers->EntityToReference(pEntity);
 
 	buildervarsmap.emplace(ref, builder_vars_t{});
 
@@ -2651,7 +2651,7 @@ void HookBuilderDtor()
 {
 	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
 	
-	int ref = gamehelpers->EntityToBCompatRef(pEntity);
+	int ref = gamehelpers->EntityToReference(pEntity);
 
 	buildervarsmap.erase(ref);
 	
@@ -2682,7 +2682,7 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
 	if( iObjectType < OBJ_LAST ) {
 		value = *(bool *)((unsigned char *)this + m_aBuildableObjectTypesOffset + iObjectType);
 	} else {
-		int ref = gamehelpers->EntityToBCompatRef((CBaseEntity *)this);
+		int ref = gamehelpers->EntityToReference((CBaseEntity *)this);
 
 		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
@@ -2707,7 +2707,7 @@ DETOUR_DECL_MEMBER1(CTFWeaponBuilderSetObjectTypeAsBuildable, void, int, iObject
 	} else {
 		CObjectInfo *pInfo = g_ObjectInfos[iObjectType].get();
 
-		int ref = gamehelpers->EntityToBCompatRef((CBaseEntity *)this);
+		int ref = gamehelpers->EntityToReference((CBaseEntity *)this);
 
 		auto it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
