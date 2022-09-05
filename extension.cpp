@@ -2456,24 +2456,31 @@ void SetEdictStateChanged(CBaseEntity *pEntity, int offset)
 SH_DECL_MANUALHOOK0_void(GenericDtor, 1, 0, 0)
 
 void *CBaseObjectCTOR = nullptr;
+void *CBaseObjectUpgradeCTOR = nullptr;
 
 SH_DECL_MANUALHOOK0(GetBaseHealth, 0, 0, 0, int)
 
 int m_iObjectTypeOffset = -1;
 int sizeofCBaseObject = -1;
+int sizeofCBaseObjectUpgrade = -1;
 
 class CBaseObject : public CBaseEntity
 {
 public:
-	static CBaseObject *create(size_t size_modifier)
+	static CBaseObject *create(void *ctor, size_t siz, size_t size_modifier)
 	{
-		CBaseObject *bytes = (CBaseObject *)engine->PvAllocEntPrivateData(sizeofCBaseObject + size_modifier);
-		call_mfunc<void>(bytes, CBaseObjectCTOR);
+		CBaseObject *bytes = (CBaseObject *)engine->PvAllocEntPrivateData(siz + size_modifier);
+		call_mfunc<void>(bytes, ctor);
 		SH_ADD_MANUALHOOK(GenericDtor, bytes, SH_MEMBER(bytes, &CBaseObject::dtor), false);
 		SH_ADD_MANUALHOOK(GetBaseHealth, bytes, SH_MEMBER(bytes, &CBaseObject::HookGetBaseHealth), false);
 		bytes->SetHealth(100);
 		bytes->SetMaxHealth(100);
 		return bytes;
+	}
+
+	static CBaseObject *create(size_t size_modifier)
+	{
+		return create(CBaseObjectCTOR, sizeofCBaseObject, size_modifier);
 	}
 	
 	int GetObjectType()
@@ -2503,6 +2510,15 @@ public:
 	}
 };
 
+class CBaseObjectUpgrade : public CBaseObject
+{
+public:
+	static CBaseObjectUpgrade *create(size_t size_modifier)
+	{
+		return (CBaseObjectUpgrade *)CBaseObject::create(CBaseObjectUpgradeCTOR, sizeofCBaseObjectUpgrade, size_modifier);
+	}
+};
+
 static cell_t GetBaseObjectSize(IPluginContext *pContext, const cell_t *params)
 {
 	return sizeofCBaseObject;
@@ -2511,6 +2527,16 @@ static cell_t GetBaseObjectSize(IPluginContext *pContext, const cell_t *params)
 static cell_t AllocateBaseObject(IPluginContext *pContext, const cell_t *params)
 {
 	return (cell_t)CBaseObject::create(params[1]);
+}
+
+static cell_t GetBaseObjectUpgradeSize(IPluginContext *pContext, const cell_t *params)
+{
+	return sizeofCBaseObjectUpgrade;
+}
+
+static cell_t AllocateBaseObjectUpgrade(IPluginContext *pContext, const cell_t *params)
+{
+	return (cell_t)CBaseObjectUpgrade::create(params[1]);
 }
 
 static const sp_nativeinfo_t g_sNativesInfo[] =
@@ -2552,6 +2578,8 @@ static const sp_nativeinfo_t g_sNativesInfo[] =
 	{"BuilderRepresentativeByIndex", BuilderRepresentativeByIndex},
 	{"AllocateBaseObject", AllocateBaseObject},
 	{"GetBaseObjectSize", GetBaseObjectSize},
+	{"AllocateBaseObjectUpgrade", AllocateBaseObjectUpgrade},
+	{"GetBaseObjectUpgradeSize", GetBaseObjectUpgradeSize},
 	{"ManageBuilderWeaponsEx", ManageBuilderWeaponsEx},
 	{"BuilderSetAsBuildableInternal", BuilderSetAsBuildable},
 	{nullptr, nullptr},
@@ -3393,6 +3421,7 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	m_iClassLocalOffset = m_iClassOffset - m_PlayerClassOffset;
 	
 	g_pGameConf->GetOffset("sizeof(CBaseObject)", &sizeofCBaseObject);
+	g_pGameConf->GetOffset("sizeof(CBaseObjectUpgrade)", &sizeofCBaseObjectUpgrade);
 	
 	int offset = -1;
 	g_pGameConf->GetOffset("CBaseObject::GetBaseHealth", &offset);
@@ -3408,6 +3437,7 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
 	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
+	g_pGameConf->GetMemSig("CBaseObjectUpgrade::CBaseObjectUpgrade", &CBaseObjectUpgradeCTOR);
 	g_pGameConf->GetMemSig("CTFWeaponBase::Precache", &CTFWeaponBasePrecache);
 	g_pGameConf->GetMemSig("CBaseEntity::PrecacheModel", &CBaseEntityPrecacheModel);
 

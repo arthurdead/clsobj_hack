@@ -28,6 +28,10 @@
 			{
 				"linux" "2928"
 			}
+			"sizeof(CBaseObjectUpgrade)"
+			{
+				"linux" "2928"
+			}
 			"CBaseObject::GetBaseHealth"
 			{
 				"linux" "384"
@@ -144,6 +148,11 @@
 			{
 				"library" "server"
 				"linux" "@_ZN11CBaseObjectC1Ev"
+			}
+			"CBaseObjectUpgrade::CBaseObjectUpgrade"
+			{
+				"library" "server"
+				"linux" "@_ZN18CBaseObjectUpgradeC1Ev"
 			}
 			"CTFPlayerClassShared::CanBuildObject"
 			{

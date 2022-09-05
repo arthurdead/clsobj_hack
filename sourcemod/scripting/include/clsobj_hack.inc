@@ -6,6 +6,7 @@
 #include <tf2>
 #include <tf2_stocks>
 #tryinclude <wpnhack>
+#tryinclude <datamaps>
 
 #define TF_CLASS_RANDOM TF_CLASS_COUNT_ALL+1
 #define TF_CLASS_COUNT_ALL (view_as<int>(TF_CLASS_CIVILIAN)+1)
@@ -181,7 +182,7 @@ methodmap TFPlayerClassDataCustom < Handle
 	}
 };
 
-stock TFClassType GetPlayerClassRepresentative(int client)
+stock TFClassType TF2_GetPlayerClassEx(int client)
 {
 	TFClassType type = TF2_GetPlayerClass(client);
 	if(view_as<int>(type) >= TF_CLASS_COUNT_ALL) {
@@ -191,7 +192,7 @@ stock TFClassType GetPlayerClassRepresentative(int client)
 	return type;
 }
 
-stock TFClassType GetClass(const char[] name)
+stock TFClassType TF2_GetClassEx(const char[] name)
 {
 	TFClassType type = TF2_GetClass(name);
 	if(type == TFClass_Unknown) {
@@ -253,15 +254,21 @@ stock void ManageBuilderWeapons(int client)
 
 forward Action ClassCanBuildObject(int client, TFClassType class, TFObjectType type, bool &can);
 
-#tryinclude <datamaps>
-
 native Address AllocateBaseObject(int size_modifier);
 native int GetBaseObjectSize();
+
+native Address AllocateBaseObjectUpgrade(int size_modifier);
+native int GetBaseObjectUpgradeSize();
 
 #if defined datamaps_included
 static Address datamaps_allocatebaseobject(int size_modifier, any data)
 {
 	return AllocateBaseObject(size_modifier);
+}
+
+static Address datamaps_allocatebaseobjectupgrade(int size_modifier, any data)
+{
+	return AllocateBaseObjectUpgrade(size_modifier);
 }
 
 static CustomDatamap __register_object(CustomEntityFactory factory, const char[] name, TFObjectType clienttype = BUILDER_INVALID_OBJECT)
@@ -291,6 +298,12 @@ static CustomDatamap __register_object(CustomEntityFactory factory, const char[]
 stock CustomDatamap register_baseobject(const char[] classname, const char[] name, TFObjectType clienttype = BUILDER_INVALID_OBJECT)
 {
 	CustomEntityFactory factory = EntityFactoryDictionary.register_function(classname, datamaps_allocatebaseobject, GetBaseObjectSize());
+	return __register_object(factory, name, clienttype);
+}
+
+stock CustomDatamap register_baseobjectupgrade(const char[] classname, const char[] name, TFObjectType clienttype = BUILDER_INVALID_OBJECT)
+{
+	CustomEntityFactory factory = EntityFactoryDictionary.register_function(classname, datamaps_allocatebaseobjectupgrade, GetBaseObjectUpgradeSize());
 	return __register_object(factory, name, clienttype);
 }
 
