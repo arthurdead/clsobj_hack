@@ -3161,6 +3161,15 @@ DETOUR_DECL_MEMBER1(CTFPlayerClassSharedCanBuildObject, bool, int, iObjectType)
 }
 
 CDetour *pCTFPlayerGetLoadoutItem = nullptr;
+CDetour *pCTFItemDefinitionGetLoadoutSlot{nullptr};
+CDetour *pCTFInventoryManagerGetBaseItemForClass{nullptr};
+CDetour *pCTFPlayerInventoryGetItemInLoadout{nullptr};
+CDetour *pCEconItemViewGetPlayerDisplayModel{nullptr};
+CDetour *pCTFItemDefinitionGetPlayerDisplayModelAlt{nullptr};
+CDetour *pCTFPlayerGetClassEyeHeight{nullptr};
+CDetour *TranslateWeaponEntForClassDetour = nullptr;
+
+//TODO!!!!!!!!! CTFTauntInfo
 
 enum loadout_positions_t
 {
@@ -3200,14 +3209,102 @@ enum loadout_positions_t
 
 DETOUR_DECL_MEMBER3(CTFPlayerGetLoadoutItem, void *, int, iClass, int, iSlot, bool, bReportWhitelistFails)
 {
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
 	if(iLastObjectType != BUILDER_INVALID_OBJECT) {
 		if(g_ObjectInfos[iLastObjectType]->m_bRequiresOwnBuilder && iSlot == LOADOUT_POSITION_BUILDING) {
 			//iSlot = LOADOUT_POSITION_BUILDING2;
 		}
-		
-		return DETOUR_MEMBER_CALL(CTFPlayerGetLoadoutItem)(iClass, iSlot, bReportWhitelistFails);
+
+		switch(g_ObjectInfos[iLastObjectType]->m_nRepresentative) {
+			case OBJ_ATTACHMENT_SAPPER:
+			iClass = TF_CLASS_SPY;
+			break;
+			case OBJ_DISPENSER:
+			case OBJ_TELEPORTER:
+			case OBJ_SENTRYGUN:
+			iClass = TF_CLASS_ENGINEER;
+			break;
+		}
+	}
+
+	return DETOUR_MEMBER_CALL(CTFPlayerGetLoadoutItem)(iClass, iSlot, bReportWhitelistFails);
+}
+
+DETOUR_DECL_MEMBER1(CTFItemDefinitionGetLoadoutSlot, int, int, iLoadoutClass)
+{
+	iLoadoutClass = m_aTFPlayerClassData[iLoadoutClass]->m_nRepresentative;
+
+	return DETOUR_MEMBER_CALL(CTFItemDefinitionGetLoadoutSlot)(iLoadoutClass);
+}
+
+DETOUR_DECL_MEMBER2(CTFInventoryManagerGetBaseItemForClass, void *, int, iClass, int, iSlot)
+{
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
+	return DETOUR_MEMBER_CALL(CTFInventoryManagerGetBaseItemForClass)(iClass, iSlot);
+}
+
+DETOUR_DECL_MEMBER2(CTFPlayerInventoryGetItemInLoadout, void *, int, iClass, int, iSlot)
+{
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
+	return DETOUR_MEMBER_CALL(CTFPlayerInventoryGetItemInLoadout)(iClass, iSlot);
+}
+
+DETOUR_DECL_MEMBER2(CEconItemViewGetPlayerDisplayModel, const char *, int, iClass, int, iTeam)
+{
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
+	return DETOUR_MEMBER_CALL(CEconItemViewGetPlayerDisplayModel)(iClass, iTeam);
+}
+
+DETOUR_DECL_MEMBER1(CTFItemDefinitionGetPlayerDisplayModelAlt, const char *, int, iClass)
+{
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
+	return DETOUR_MEMBER_CALL(CTFItemDefinitionGetPlayerDisplayModelAlt)(iClass);
+}
+
+DETOUR_DECL_STATIC2(TranslateWeaponEntForClass, const char *, const char *, pszName, int, iClass)
+{
+	iClass = m_aTFPlayerClassData[iClass]->m_nRepresentative;
+
+	return DETOUR_STATIC_CALL(TranslateWeaponEntForClass)(pszName, iClass);
+}
+
+Vector g_TFClassViewVectors[11] =
+{
+	Vector( 0, 0, 72 ),		// TF_CLASS_UNDEFINED
+
+	Vector( 0, 0, 65 ),		// TF_CLASS_SCOUT,			// TF_FIRST_NORMAL_CLASS
+	Vector( 0, 0, 75 ),		// TF_CLASS_SNIPER,
+	Vector( 0, 0, 68 ),		// TF_CLASS_SOLDIER,
+	Vector( 0, 0, 68 ),		// TF_CLASS_DEMOMAN,
+	Vector( 0, 0, 75 ),		// TF_CLASS_MEDIC,
+	Vector( 0, 0, 75 ),		// TF_CLASS_HEAVYWEAPONS,
+	Vector( 0, 0, 68 ),		// TF_CLASS_PYRO,
+	Vector( 0, 0, 75 ),		// TF_CLASS_SPY,
+	Vector( 0, 0, 68 ),		// TF_CLASS_ENGINEER,
+
+	Vector( 0, 0, 65 ),		// TF_CLASS_CIVILIAN,		// TF_LAST_NORMAL_CLASS
+};
+
+int m_flModelScaleOffset{-1};
+
+DETOUR_DECL_MEMBER0(CTFPlayerGetClassEyeHeight, Vector)
+{
+	CBaseEntity *pThis{(CBaseEntity *)this};
+
+	float modelscale = *(float *)((unsigned char *)pThis + m_flModelScaleOffset);
+
+	int m_iClass = *(int *)((unsigned char *)pThis + m_iClassOffset);
+	m_iClass = m_aTFPlayerClassData[m_iClass]->m_nRepresentative;
+
+	if(m_iClass < 0 || m_iClass >= sizeof(g_TFClassViewVectors)) {
+		return g_TFClassViewVectors[0] * modelscale;
 	} else {
-		return DETOUR_MEMBER_CALL(CTFPlayerGetLoadoutItem)(iClass, iSlot, bReportWhitelistFails);
+		return g_TFClassViewVectors[m_iClass] * modelscale;
 	}
 }
 
@@ -3293,9 +3390,11 @@ DETOUR_DECL_MEMBER1(CTFPlayerManageRegularWeapons, void, TFPlayerClassData_t *, 
 
 	DETOUR_MEMBER_CALL(CTFPlayerManageRegularWeapons)(pData);
 
+#if 0
 	if(m_iClass >= TF_CLASS_COUNT) {
 		call_mfunc<void, CBaseEntity, TFPlayerClassData_t *>(pPlayer, CTFPlayerManageRegularWeaponsLegacyAddr, pData);
 	}
+#endif
 }
 
 bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
@@ -3375,6 +3474,27 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	pCTFPlayerGetLoadoutItem = DETOUR_CREATE_MEMBER(CTFPlayerGetLoadoutItem, "CTFPlayer::GetLoadoutItem")
 	pCTFPlayerGetLoadoutItem->EnableDetour();
+
+	pCTFItemDefinitionGetLoadoutSlot = DETOUR_CREATE_MEMBER(CTFItemDefinitionGetLoadoutSlot, "CTFItemDefinition::GetLoadoutSlot")
+	pCTFItemDefinitionGetLoadoutSlot->EnableDetour();
+
+	pCTFInventoryManagerGetBaseItemForClass = DETOUR_CREATE_MEMBER(CTFInventoryManagerGetBaseItemForClass, "CTFInventoryManager::GetBaseItemForClass")
+	pCTFInventoryManagerGetBaseItemForClass->EnableDetour();
+
+	pCTFPlayerInventoryGetItemInLoadout = DETOUR_CREATE_MEMBER(CTFPlayerInventoryGetItemInLoadout, "CTFPlayerInventory::GetItemInLoadout")
+	pCTFPlayerInventoryGetItemInLoadout->EnableDetour();
+
+	pCEconItemViewGetPlayerDisplayModel = DETOUR_CREATE_MEMBER(CEconItemViewGetPlayerDisplayModel, "CEconItemView::GetPlayerDisplayModel")
+	pCEconItemViewGetPlayerDisplayModel->EnableDetour();
+
+	pCTFItemDefinitionGetPlayerDisplayModelAlt = DETOUR_CREATE_MEMBER(CTFItemDefinitionGetPlayerDisplayModelAlt, "CTFItemDefinition::GetPlayerDisplayModelAlt")
+	pCTFItemDefinitionGetPlayerDisplayModelAlt->EnableDetour();
+
+	TranslateWeaponEntForClassDetour = DETOUR_CREATE_STATIC(TranslateWeaponEntForClass, "TranslateWeaponEntForClass")
+	TranslateWeaponEntForClassDetour->EnableDetour();
+
+	pCTFPlayerGetClassEyeHeight = DETOUR_CREATE_MEMBER(CTFPlayerGetClassEyeHeight, "CTFPlayer::GetClassEyeHeight")
+	pCTFPlayerGetClassEyeHeight->EnableDetour();
 	
 	pCTFPlayerManageBuilderWeapons = DETOUR_CREATE_MEMBER(CTFPlayerManageBuilderWeapons, "CTFPlayer::ManageBuilderWeapons")
 	pCTFPlayerManageBuilderWeapons->EnableDetour();
@@ -3415,6 +3535,9 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	gamehelpers->FindSendPropInfo("CTFPlayer", "m_PlayerClass", &info);
 	m_PlayerClassOffset = info.actual_offset;
+
+	gamehelpers->FindSendPropInfo("CBaseAnimating", "m_flModelScale", &info);
+	m_flModelScaleOffset = info.actual_offset;
 	
 	gamehelpers->FindSendPropInfo("CTFPlayer", "m_iClass", &info);
 	m_iClassOffset = info.actual_offset;
@@ -3474,6 +3597,13 @@ void Sample::SDK_OnUnload()
 	pReadUsercmd->Destroy();
 	pCTFPlayerClassSharedCanBuildObject->Destroy();
 	pCTFPlayerGetLoadoutItem->Destroy();
+	pCTFItemDefinitionGetLoadoutSlot->Destroy();
+	pCTFInventoryManagerGetBaseItemForClass->Destroy();
+	pCTFPlayerInventoryGetItemInLoadout->Destroy();
+	pCEconItemViewGetPlayerDisplayModel->Destroy();
+	pCTFItemDefinitionGetPlayerDisplayModelAlt->Destroy();
+	pCTFPlayerGetClassEyeHeight->Destroy();
+	TranslateWeaponEntForClassDetour->Destroy();
 	pCTFPlayerManageBuilderWeapons->Destroy();
 	pCBaseObjectCanBeUpgraded->Destroy();
 	pCBaseObjectDoQuickBuild->Destroy();

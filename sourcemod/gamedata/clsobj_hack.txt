@@ -224,6 +224,41 @@
 				"library" "server"
 				"linux" "@_ZN11CBaseObject12DoQuickBuildEb"
 			}
+			"CTFItemDefinition::GetLoadoutSlot"
+			{
+				"library" "server"
+				"linux" "@_ZNK17CTFItemDefinition14GetLoadoutSlotEi"
+			}
+			"CEconItemView::GetPlayerDisplayModel"
+			{
+				"library" "server"
+				"linux" "@_ZNK13CEconItemView21GetPlayerDisplayModelEii"
+			}
+			"CTFItemDefinition::GetPlayerDisplayModelAlt"
+			{
+				"library" "server"
+				"linux" "@_ZNK17CTFItemDefinition24GetPlayerDisplayModelAltEi"
+			}
+			"CTFPlayer::GetClassEyeHeight"
+			{
+				"library" "server"
+				"linux" "@_ZN9CTFPlayer17GetClassEyeHeightEv"
+			}
+			"CTFInventoryManager::GetBaseItemForClass"
+			{
+				"library" "server"
+				"linux" "@_ZN19CTFInventoryManager19GetBaseItemForClassEii"
+			}
+			"CTFPlayerInventory::GetItemInLoadout"
+			{
+				"library" "server"
+				"linux" "@_ZN18CTFPlayerInventory16GetItemInLoadoutEii"
+			}
+			"TranslateWeaponEntForClass"
+			{
+				"library" "server"
+				"linux" "@_Z26TranslateWeaponEntForClassPKci"
+			}
 		}
 	}
 }
