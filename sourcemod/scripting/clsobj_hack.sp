@@ -21,6 +21,7 @@ bool late_loaded;
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
+	RegPluginLibrary("clsobj_hack");
 	CreateNative("BuilderSetAsBuildable", BuilderSetAsBuildableNative);
 	late_loaded = late;
 	return APLRes_Success;

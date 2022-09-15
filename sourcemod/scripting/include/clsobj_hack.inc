@@ -386,3 +386,14 @@ public Extension __ext_clsobj_hack =
 	required=0,
 #endif
 };
+
+public SharedPlugin __pl_clsobj_hack =
+{
+	name = "clsobj_hack",
+	file = "clsobj_hack.smx",
+#if defined REQUIRE_PLUGIN
+	required = 1,
+#else
+	required = 0,
+#endif
+};
