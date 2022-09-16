@@ -35,7 +35,7 @@ CopyFiles('sourcemod/scripting/include', 'addons/sourcemod/scripting/include',
 )
 
 CopyFiles('sourcemod/scripting', 'addons/sourcemod/scripting',
-  [ 'clsobj_hack_helper.sp', ]
+  [ 'clsobj_hack.sp', ]
 )
 
 # GameData files
