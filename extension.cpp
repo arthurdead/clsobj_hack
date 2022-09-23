@@ -842,7 +842,7 @@ void UpdateBuilders()
 		return;
 	}
 	
-	for(int i = 1; i <= playerhelpers->GetNumPlayers(); ++i) {
+	for(int i = 1; i <= playerhelpers->GetMaxClients(); ++i) {
 		IGamePlayer *pPlayer = playerhelpers->GetGamePlayer(i);
 		if(!pPlayer || !pPlayer->IsInGame()) {
 			continue;
