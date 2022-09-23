@@ -182,6 +182,13 @@ methodmap TFPlayerClassDataCustom < Handle
 	}
 };
 
+stock TFClassType TF2_GetClassRep(TFClassType type)
+{
+	TFPlayerClassData data = TFPlayerClassData.Get(type);
+	type = view_as<TFClassType>(data.GetInt("m_nRepresentative"));
+	return type;
+}
+
 stock TFClassType TF2_GetPlayerClassEx(int client)
 {
 	TFClassType type = TF2_GetPlayerClass(client);
