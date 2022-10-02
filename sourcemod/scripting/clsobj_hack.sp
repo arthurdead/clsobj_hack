@@ -6,6 +6,15 @@
 
 //#define DEBUG
 
+public Plugin myinfo = 
+{
+	name = "clsobj_hack",
+	author = "Arthurdead",
+	description = "",
+	version = "0.1.0.1",
+	url = ""
+};
+
 native int BuilderGetNumBuildables(int entity);
 native TFObjectType BuilderGetBuildableIndex(int entity, int index);
 native TFObjectType BuilderIndexByRepresentative(int entity, TFObjectType type);
