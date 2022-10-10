@@ -572,6 +572,8 @@ void LoadObjectInfo(CObjectInfo *pInfo, KeyValues *pSub, const char *pFilename)
 	pInfo->m_AltModes[0].pszIconMenu   = ReadAndAllocString(pInfo->m_pIconMenu);
 }
 
+#define OBJ_MAX_UPGRADE_LEVEL 3
+
 void DoLoadObjectInfos(IBaseFileSystem *pFileSystem)
 {
 	g_ObjectInfos.clear(false);
@@ -622,19 +624,18 @@ void DoLoadObjectInfos(IBaseFileSystem *pFileSystem)
 	g_ObjectInfos[OBJ_LAST]->m_nBaseHealth = 0;
 	
 	g_ObjectInfos[OBJ_DISPENSER]->m_nRepresentative = OBJ_DISPENSER;
-	g_ObjectInfos[OBJ_DISPENSER]->m_bVisibleInWeaponSelection = true;
 	g_ObjectInfos[OBJ_DISPENSER]->m_nBaseHealth = 150;
+	g_ObjectInfos[OBJ_DISPENSER]->m_MaxUpgradeLevel = OBJ_MAX_UPGRADE_LEVEL;
 	
 	g_ObjectInfos[OBJ_TELEPORTER]->m_nRepresentative = OBJ_TELEPORTER;
-	g_ObjectInfos[OBJ_TELEPORTER]->m_bVisibleInWeaponSelection = true;
 	g_ObjectInfos[OBJ_TELEPORTER]->m_nBaseHealth = 150;
+	g_ObjectInfos[OBJ_TELEPORTER]->m_MaxUpgradeLevel = OBJ_MAX_UPGRADE_LEVEL;
 	
 	g_ObjectInfos[OBJ_SENTRYGUN]->m_nRepresentative = OBJ_SENTRYGUN;
-	g_ObjectInfos[OBJ_SENTRYGUN]->m_bVisibleInWeaponSelection = true;
 	g_ObjectInfos[OBJ_SENTRYGUN]->m_nBaseHealth = 150;
+	g_ObjectInfos[OBJ_SENTRYGUN]->m_MaxUpgradeLevel = OBJ_MAX_UPGRADE_LEVEL;
 	
 	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_nRepresentative = OBJ_ATTACHMENT_SAPPER;
-	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_bVisibleInWeaponSelection = true;
 	g_ObjectInfos[OBJ_ATTACHMENT_SAPPER]->m_nBaseHealth = 100;
 	
 	UpdateObjectOffsets();
@@ -3050,8 +3051,6 @@ int CBaseObjectGetMaxUpgradeLevelOffset = -1;
 
 CBaseEntity *pLastPlayer = nullptr;
 
-#define OBJ_MAX_UPGRADE_LEVEL 3
-
 void *CBaseObjectCanBeUpgradedAddr = nullptr;
 void *CBaseObjectDoQuickBuildAddr = nullptr;
 
@@ -3103,22 +3102,24 @@ DETOUR_DECL_STATIC2(ClassCanBuild, bool, int, iClass, int, iObjectType)
 			break;
 		}
 	}
-	
-	ClassCanBuildObject->PushCell(pLastPlayer ? gamehelpers->EntityToBCompatRef(pLastPlayer) : -1);
-	ClassCanBuildObject->PushCell(iClass);
-	ClassCanBuildObject->PushCell(iObjectType);
-	cell_t can = ret;
-	ClassCanBuildObject->PushCellByRef(&can);
-	cell_t res = 0;
-	ClassCanBuildObject->Execute(&res);
-	
-	switch(res) {
-		case Pl_Changed: {
-			return can;
-		}
-		case Pl_Handled:
-		case Pl_Stop: {
-			return false;
+
+	if(ClassCanBuildObject->GetFunctionCount() > 0) {
+		ClassCanBuildObject->PushCell(pLastPlayer ? gamehelpers->EntityToBCompatRef(pLastPlayer) : -1);
+		ClassCanBuildObject->PushCell(iClass);
+		ClassCanBuildObject->PushCell(iObjectType);
+		cell_t can = ret;
+		ClassCanBuildObject->PushCellByRef(&can);
+		cell_t res = 0;
+		ClassCanBuildObject->Execute(&res);
+		
+		switch(res) {
+			case Pl_Changed: {
+				return can;
+			}
+			case Pl_Handled:
+			case Pl_Stop: {
+				return false;
+			}
 		}
 	}
 	
@@ -3134,26 +3135,29 @@ DETOUR_DECL_MEMBER1(CTFPlayerClassSharedCanBuildObject, bool, int, iObjectType)
 	if(iObjectType == OBJ_LAST) {
 		return false;
 	}
-	
-	int m_iClass = *(int *)((unsigned char *)this + m_iClassLocalOffset);
-	CBaseEntity *pPlayer = (CBaseEntity *)((unsigned char *)this - m_PlayerClassOffset);
-	
-	ClassCanBuildObject->PushCell(gamehelpers->EntityToBCompatRef(pPlayer));
-	ClassCanBuildObject->PushCell(m_iClass);
-	ClassCanBuildObject->PushCell(iObjectType);
+
 	bool ret = DETOUR_MEMBER_CALL(CTFPlayerClassSharedCanBuildObject)(iObjectType);
-	cell_t can = ret;
-	ClassCanBuildObject->PushCellByRef(&can);
-	cell_t res = 0;
-	ClassCanBuildObject->Execute(&res);
-	
-	switch(res) {
-		case Pl_Changed: {
-			return can;
-		}
-		case Pl_Handled:
-		case Pl_Stop: {
-			return false;
+
+	if(ClassCanBuildObject->GetFunctionCount() > 0) {
+		int m_iClass = *(int *)((unsigned char *)this + m_iClassLocalOffset);
+		CBaseEntity *pPlayer = (CBaseEntity *)((unsigned char *)this - m_PlayerClassOffset);
+
+		ClassCanBuildObject->PushCell(gamehelpers->EntityToBCompatRef(pPlayer));
+		ClassCanBuildObject->PushCell(m_iClass);
+		ClassCanBuildObject->PushCell(iObjectType);
+		cell_t can = ret;
+		ClassCanBuildObject->PushCellByRef(&can);
+		cell_t res = 0;
+		ClassCanBuildObject->Execute(&res);
+		
+		switch(res) {
+			case Pl_Changed: {
+				return can;
+			}
+			case Pl_Handled:
+			case Pl_Stop: {
+				return false;
+			}
 		}
 	}
 	
