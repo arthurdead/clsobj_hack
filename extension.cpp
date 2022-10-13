@@ -3574,7 +3574,7 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	
 	sharesys->AddNatives(myself, g_sNativesInfo);
 	
-	ClassCanBuildObject = forwards->CreateForward("ClassCanBuildObject", ET_Event, 4, nullptr, Param_Cell, Param_Cell, Param_Cell, Param_CellByRef);
+	ClassCanBuildObject = forwards->CreateForward("ClassCanBuildObject", ET_Hook, 4, nullptr, Param_Cell, Param_Cell, Param_Cell, Param_CellByRef);
 	
 	objinfo_handle = handlesys->CreateType("CObjectInfo", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
 	classdata_handle = handlesys->CreateType("TFPlayerClassData", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
