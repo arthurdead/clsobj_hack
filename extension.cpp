@@ -2409,6 +2409,8 @@ int m_iHealthOffset = -1;
 
 void SetEdictStateChanged(CBaseEntity *pEntity, int offset);
 
+int CBaseEntityIsBaseObject = -1;
+
 class CBaseEntity : public IServerEntity
 {
 public:
@@ -2436,6 +2438,11 @@ public:
 		
 		*(int *)((unsigned char *)this + m_iMaxHealthOffset) = hp;
 		SetEdictStateChanged(this, m_iMaxHealthOffset);
+	}
+
+	bool IsBaseObject()
+	{
+		return call_vfunc<bool, CBaseEntity>(this, CBaseEntityIsBaseObject);
 	}
 };
 
@@ -2525,6 +2532,17 @@ static cell_t GetBaseObjectSize(IPluginContext *pContext, const cell_t *params)
 	return sizeofCBaseObject;
 }
 
+static cell_t EntityIsBaseObject(IPluginContext *pContext, const cell_t *params)
+{
+	CBaseEntity *pSubject = gamehelpers->ReferenceToEntity(params[1]);
+	if(!pSubject)
+	{
+		return pContext->ThrowNativeError("Invalid Entity Reference/Index %i", params[1]);
+	}
+
+	return pSubject->IsBaseObject();
+}
+
 static cell_t AllocateBaseObject(IPluginContext *pContext, const cell_t *params)
 {
 	return (cell_t)CBaseObject::create(params[1]);
@@ -2583,6 +2601,7 @@ static const sp_nativeinfo_t g_sNativesInfo[] =
 	{"GetBaseObjectUpgradeSize", GetBaseObjectUpgradeSize},
 	{"ManageBuilderWeaponsEx", ManageBuilderWeaponsEx},
 	{"BuilderSetAsBuildableInternal", BuilderSetAsBuildable},
+	{"EntityIsBaseObject", EntityIsBaseObject},
 	{nullptr, nullptr},
 };
 
@@ -3561,7 +3580,9 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	SH_MANUALHOOK_RECONFIGURE(Spawn, offset, 0, 0);
 
 	g_pGameConf->GetOffset("CBaseObject::GetMaxUpgradeLevel", &CBaseObjectGetMaxUpgradeLevelOffset);
-	
+
+	g_pGameConf->GetOffset("CBaseEntity::IsBaseObject", &CBaseEntityIsBaseObject);
+
 	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
 	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
 	g_pGameConf->GetMemSig("CBaseObjectUpgrade::CBaseObjectUpgrade", &CBaseObjectUpgradeCTOR);

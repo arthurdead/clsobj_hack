@@ -56,6 +56,10 @@
 			{
 				"linux" "50"
 			}
+			"CBaseEntity::IsBaseObject"
+			{
+				"linux" "84"
+			}
 		}
 		"Signatures"
 		{

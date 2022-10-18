@@ -261,6 +261,8 @@ stock void ManageBuilderWeapons(int client)
 
 forward Action ClassCanBuildObject(int client, TFClassType class, TFObjectType type, bool &can);
 
+native bool EntityIsBaseObject(int entity);
+
 native Address AllocateBaseObject(int size_modifier);
 native int GetBaseObjectSize();
 
