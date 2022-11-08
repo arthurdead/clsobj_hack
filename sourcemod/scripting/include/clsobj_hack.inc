@@ -8,9 +8,9 @@
 #tryinclude <wpnhack>
 #tryinclude <datamaps>
 
-#define TF_CLASS_RANDOM TF_CLASS_COUNT_ALL+1
+#define TF_CLASS_RANDOM (TF_CLASS_COUNT_ALL+1)
 #define TF_CLASS_COUNT_ALL (view_as<int>(TF_CLASS_CIVILIAN)+1)
-#define TF_CLASS_CIVILIAN view_as<TFClassType>(view_as<int>(TFClass_Engineer)+1)
+#define TF_CLASS_CIVILIAN (view_as<TFClassType>(view_as<int>(TFClass_Engineer)+1))
 
 #define TF_CLASS_COUNT			( TF_CLASS_COUNT_ALL )
 
