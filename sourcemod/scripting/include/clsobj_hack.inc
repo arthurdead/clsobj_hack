@@ -321,10 +321,10 @@ stock CustomDatamap register_object(const char[] classname, const char[] name, T
 	CustomEntityFactory factory = null;
 
 	switch(based) {
-		case TFObject_Sentry: factory = EntityFactoryDictionary.register_based_name(classname, "obj_sentrygun");
-		case TFObject_Dispenser: factory = EntityFactoryDictionary.register_based_name(classname, "obj_dispenser");
-		case TFObject_Teleporter: factory = EntityFactoryDictionary.register_based_name(classname, "obj_teleporter");
-		case TFObject_Sapper: factory = EntityFactoryDictionary.register_based_name(classname, "obj_attachment_sapper");
+		case TFObject_Sentry: factory = EntityFactoryDictionary.register_based(classname, "obj_sentrygun");
+		case TFObject_Dispenser: factory = EntityFactoryDictionary.register_based(classname, "obj_dispenser");
+		case TFObject_Teleporter: factory = EntityFactoryDictionary.register_based(classname, "obj_teleporter");
+		case TFObject_Sapper: factory = EntityFactoryDictionary.register_based(classname, "obj_attachment_sapper");
 		default: SetFailState("invalid object type %i", based);
 	}
 

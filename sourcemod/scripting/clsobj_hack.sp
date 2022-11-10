@@ -21,12 +21,12 @@ native TFObjectType BuilderIndexByRepresentative(int entity, TFObjectType type);
 native TFObjectType BuilderRepresentativeByIndex(int entity, TFObjectType type);
 native void BuilderSetAsBuildableInternal(int entity, TFObjectType type, bool value);
 
-int m_hMyWeaponsLen = -1;
-bool bSentByPlugin[MAXPLAYERS+1] = {false, ...};
+static int m_hMyWeaponsLen = -1;
+static bool bSentByPlugin[MAXPLAYERS+1] = {false, ...};
 
-ConVar tf_cheapobjects = null;
+static ConVar tf_cheapobjects = null;
 
-bool late_loaded;
+static bool late_loaded;
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
@@ -36,7 +36,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	return APLRes_Success;
 }
 
-int BuilderSetAsBuildableNative(Handle plugin, int params)
+static int BuilderSetAsBuildableNative(Handle plugin, int params)
 {
 	int entity = GetNativeCell(1);
 	TFObjectType type = GetNativeCell(2);
@@ -109,7 +109,7 @@ static void player_builtobject(Event event, const char[] name, bool dontBroadcas
 }
 #endif
 
-Action sm_dumpbuilder(int client, int args)
+static Action sm_dumpbuilder(int client, int args)
 {
 	if(m_hMyWeaponsLen == -1) {
 		m_hMyWeaponsLen = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
@@ -140,7 +140,7 @@ Action sm_dumpbuilder(int client, int args)
 	return Plugin_Handled;
 }
 
-Action sm_refreshbuilder(int client, int args)
+static Action sm_refreshbuilder(int client, int args)
 {
 	if(args < 1) {
 		ReplyToCommand(client, "[SM] Usage: sm_refreshbuilder <filter> [class]");
@@ -188,7 +188,7 @@ Action sm_refreshbuilder(int client, int args)
 	return Plugin_Handled;
 }
 
-void PrintObjectInfoString(CObjectInfo info, const char[] name, int index = 0, const char[] prepend = "", const char[] append = "")
+static void PrintObjectInfoString(CObjectInfo info, const char[] name, int index = 0, const char[] prepend = "", const char[] append = "")
 {
 	char value[64];
 	info.GetString(name, value, sizeof(value), index);
@@ -196,17 +196,17 @@ void PrintObjectInfoString(CObjectInfo info, const char[] name, int index = 0, c
 	PrintToServer("    %s%s%s = %s", prepend, name, append, value);
 }
 
-void PrintObjectInfoInt(CObjectInfo info, const char[] name)
+static void PrintObjectInfoInt(CObjectInfo info, const char[] name)
 {
 	PrintToServer("    %s = %i", name, info.GetInt(name));
 }
 
-void PrintObjectInfoFloat(CObjectInfo info, const char[] name)
+static void PrintObjectInfoFloat(CObjectInfo info, const char[] name)
 {
 	PrintToServer("    %s = %f", name, info.GetFloat(name));
 }
 
-void PrintObjectInfoRepresentative(CObjectInfo info)
+static void PrintObjectInfoRepresentative(CObjectInfo info)
 {
 	TFObjectType m_nRepresentative = view_as<TFObjectType>(info.GetInt("m_nRepresentative"));
 
@@ -218,7 +218,7 @@ void PrintObjectInfoRepresentative(CObjectInfo info)
 	PrintToServer("    m_nRepresentative = %i, %s", m_nRepresentative, m_pObjectName_rep);
 }
 
-void PrintObjectInfoName(CObjectInfo info)
+static void PrintObjectInfoName(CObjectInfo info)
 {
 	char m_pObjectName[64];
 	info.GetString("m_pObjectName", m_pObjectName, sizeof(m_pObjectName));
@@ -229,7 +229,7 @@ void PrintObjectInfoName(CObjectInfo info)
 	PrintToServer("%i - %s, %s", info.Index, m_pObjectName, m_pClassName);
 }
 
-void PrintObjectAltModes(CObjectInfo info)
+static void PrintObjectAltModes(CObjectInfo info)
 {
 	PrintObjectInfoInt(info, "m_iNumAltModes");
 
@@ -246,7 +246,7 @@ void PrintObjectAltModes(CObjectInfo info)
 	PrintObjectInfoString(info, "m_AltModes", 22, "  ", "[2].pszIconMenu");
 }
 
-void DumpObjectInfo(CObjectInfo info)
+static void DumpObjectInfo(CObjectInfo info)
 {
 	PrintObjectInfoName(info);
 	PrintObjectInfoRepresentative(info);
@@ -284,7 +284,7 @@ void DumpObjectInfo(CObjectInfo info)
 	PrintObjectInfoInt(info, "m_nBaseHealth");
 }
 
-Action sm_dumpobjsinfo(int client, int args)
+static Action sm_dumpobjsinfo(int client, int args)
 {
 	int num = CObjectInfo.Count();
 
@@ -333,7 +333,7 @@ public void OnClientDisconnect(int client)
 	bSentByPlugin[client] = false;
 }
 
-Action HandleBuildCommand(int client, const char[] command, int args)
+static Action HandleBuildCommand(int client, const char[] command, int args)
 {
 	if(m_hMyWeaponsLen == -1) {
 		m_hMyWeaponsLen = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
@@ -380,12 +380,12 @@ Action HandleBuildCommand(int client, const char[] command, int args)
 	return Plugin_Continue;
 }
 
-Action command_build(int client, const char[] command, int args)
+static Action command_build(int client, const char[] command, int args)
 {
 	return HandleBuildCommand(client, command, args);
 }
 
-Action ProxyObjectType(int &iValue)
+static Action ProxyObjectType(int &iValue)
 {
 	if(iValue >= CObjectInfo.Count()) {
 		iValue = 0;
@@ -397,7 +397,7 @@ Action ProxyObjectType(int &iValue)
 	}
 }
 
-Action ProxyObjectTypeObject(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+static Action ProxyObjectTypeObject(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
 {
 #if defined DEBUG
 	PrintToServer("ProxyObjectTypeObject %i %i", iEntity, iValue);
@@ -405,7 +405,7 @@ Action ProxyObjectTypeObject(int iEntity, const char[] cPropName, int &iValue, i
 	return ProxyObjectType(iValue);
 }
 
-Action ProxyObjectTypeBuilder(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+static Action ProxyObjectTypeBuilder(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
 {
 #if defined DEBUG && 0
 	PrintToServer("ProxyObjectTypeBuilder %i %i", iEntity, iValue);
@@ -413,7 +413,7 @@ Action ProxyObjectTypeBuilder(int iEntity, const char[] cPropName, int &iValue, 
 	return ProxyObjectType(iValue);
 }
 
-void ObjectOnSpawnPost(int entity)
+static void ObjectOnSpawnPost(int entity)
 {
 	TFObjectType m_iObjectType = view_as<TFObjectType>(GetEntProp(entity, Prop_Send, "m_iObjectType"));
 	if(m_iObjectType > OBJ_LAST) {
@@ -427,7 +427,7 @@ void ObjectOnSpawnPost(int entity)
 	SDKUnhook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
 }
 
-Action ProxyBuildableObjectTypes(int iEntity, const char[] cPropName, bool &iValue, int iElement, int client)
+static Action ProxyBuildableObjectTypes(int iEntity, const char[] cPropName, bool &iValue, int iElement, int client)
 {
 	Action ret = Plugin_Continue;
 
@@ -446,7 +446,7 @@ Action ProxyBuildableObjectTypes(int iEntity, const char[] cPropName, bool &iVal
 	return ret;
 }
 
-void BuilderOnSpawnPost(int entity)
+static void BuilderOnSpawnPost(int entity)
 {
 	proxysend_hook(entity, "m_iObjectType", ProxyObjectTypeBuilder, false);
 	proxysend_hook(entity, "m_aBuildableObjectTypes", ProxyBuildableObjectTypes, false);
@@ -456,7 +456,7 @@ void BuilderOnSpawnPost(int entity)
 #endif
 }
 
-Action ProxyPlayerClass(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
+static Action ProxyPlayerClass(int iEntity, const char[] cPropName, int &iValue, int iElement, int client)
 {
 	if(iValue >= TFPlayerClassData.Count()) {
 		iValue = view_as<int>(TFClass_Unknown);

@@ -2211,6 +2211,14 @@ static cell_t TFPlayerClassData_tCreate(IPluginContext *pContext, const cell_t *
 struct builder_vars_t
 {
 	std::unordered_map<int, int> m_aBuildableObjectTypes{};
+	std::vector<int> hookids{};
+
+	void removed()
+	{
+		for(int id : hookids) {
+			SH_REMOVE_HOOK_ID(id);
+		}
+	}
 };
 
 std::unordered_map<int, builder_vars_t> buildervarsmap{};
@@ -2229,6 +2237,7 @@ void RemoveBuilderVars(int index)
 			++it2;
 		}
 		if(map1.empty()) {
+			it1->second.removed();
 			it1 = buildervarsmap.erase(it1);
 			continue;
 		}
@@ -2462,6 +2471,7 @@ void SetEdictStateChanged(CBaseEntity *pEntity, int offset)
 }
 
 SH_DECL_MANUALHOOK0_void(GenericDtor, 1, 0, 0)
+SH_DECL_MANUALHOOK0_void(UpdateOnRemove, 0, 0, 0)
 
 void *CBaseObjectCTOR = nullptr;
 void *CBaseObjectUpgradeCTOR = nullptr;
@@ -2479,7 +2489,7 @@ public:
 	{
 		CBaseObject *bytes = (CBaseObject *)engine->PvAllocEntPrivateData(siz + size_modifier);
 		call_mfunc<void>(bytes, ctor);
-		SH_ADD_MANUALHOOK(GenericDtor, bytes, SH_MEMBER(bytes, &CBaseObject::dtor), false);
+		SH_ADD_MANUALHOOK(UpdateOnRemove, bytes, SH_MEMBER(bytes, &CBaseObject::removed), false);
 		SH_ADD_MANUALHOOK(GetBaseHealth, bytes, SH_MEMBER(bytes, &CBaseObject::HookGetBaseHealth), false);
 		bytes->SetHealth(100);
 		bytes->SetMaxHealth(100);
@@ -2496,13 +2506,13 @@ public:
 		return *(int *)((unsigned char *)this + m_iObjectTypeOffset);
 	}
 	
-	void dtor()
+	void removed()
 	{
 		CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
-		
-		SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_MEMBER(this, &CBaseObject::dtor), false);
+
+		SH_REMOVE_MANUALHOOK(UpdateOnRemove, pEntity, SH_MEMBER(this, &CBaseObject::removed), false);
 		SH_REMOVE_MANUALHOOK(GetBaseHealth, pEntity, SH_MEMBER(this, &CBaseObject::HookGetBaseHealth), false);
-		
+
 		RETURN_META(MRES_HANDLED);
 	}
 	
@@ -2684,39 +2694,48 @@ void HookBuilderPrecache()
 	RETURN_META(MRES_SUPERCEDE);
 }
 
+void HookBuilderRemoved();
+
 void HookBuilderSpawn()
 {
 	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
 
+	SH_REMOVE_MANUALHOOK(Spawn, pEntity, SH_STATIC(HookBuilderSpawn), true);
+
 	int ref = gamehelpers->EntityToReference(pEntity);
 
-	buildervarsmap.emplace(ref, builder_vars_t{});
+	builder_vars_t vars{};
+	buildervarsmap.emplace(ref, std::move(vars));
+
+	SH_ADD_MANUALHOOK(UpdateOnRemove, pEntity, SH_STATIC(HookBuilderRemoved), false);
+	SH_ADD_MANUALHOOK(Precache, pEntity, SH_STATIC(HookBuilderPrecache), false);
 
 	RETURN_META(MRES_HANDLED);
 }
 
-void HookBuilderDtor()
+void HookBuilderRemoved()
 {
 	CBaseEntity *pEntity = META_IFACEPTR(CBaseEntity);
-	
+
+	SH_REMOVE_MANUALHOOK(UpdateOnRemove, pEntity, SH_STATIC(HookBuilderRemoved), false);
+
 	int ref = gamehelpers->EntityToReference(pEntity);
 
-	buildervarsmap.erase(ref);
-	
-	SH_REMOVE_MANUALHOOK(GenericDtor, pEntity, SH_STATIC(HookBuilderDtor), false);
+	auto it{buildervarsmap.find(ref)};
+	if(it != buildervarsmap.end()) {
+		buildervarsmap.erase(it);
+	}
+
 	SH_REMOVE_MANUALHOOK(Precache, pEntity, SH_STATIC(HookBuilderPrecache), false);
-	SH_REMOVE_MANUALHOOK(Spawn, pEntity, SH_STATIC(HookBuilderSpawn), true);
-	
+
 	RETURN_META(MRES_HANDLED);
 }
 
 DETOUR_DECL_MEMBER0(CTFWeaponBuilderCTOR, void)
 {
 	DETOUR_MEMBER_CALL(CTFWeaponBuilderCTOR)();
-	
-	SH_ADD_MANUALHOOK(GenericDtor, this, SH_STATIC(HookBuilderDtor), false);
+
 	SH_ADD_MANUALHOOK(Spawn, this, SH_STATIC(HookBuilderSpawn), true);
-	//SH_ADD_MANUALHOOK(Precache, this, SH_STATIC(HookBuilderPrecache), false);
 }
 
 DETOUR_DECL_MEMBER1(CTFWeaponBuilderCanBuildObjectType, bool, int, iObjectType)
@@ -3422,27 +3441,187 @@ DETOUR_DECL_MEMBER1(CTFPlayerManageRegularWeapons, void, TFPlayerClassData_t *, 
 
 bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 {
-	gameconfs->LoadGameConfigFile("clsobj_hack", &g_pGameConf, error, maxlen);
-	
-	CDetourManager::Init(g_pSM->GetScriptingEngine(), g_pGameConf);
+	if(!gameconfs->LoadGameConfigFile("clsobj_hack", &g_pGameConf, error, maxlen)) {
+		return false;
+	}
+
+	int CBaseEntityUpdateOnRemove{-1};
+	g_pGameConf->GetOffset("CBaseEntity::UpdateOnRemove", &CBaseEntityUpdateOnRemove);
+	if(CBaseEntityUpdateOnRemove == -1) {
+		snprintf(error, maxlen, "could not get CBaseEntity::UpdateOnRemove offset");
+		return false;
+	}
 
 	g_pGameConf->GetMemSig("GetWeaponId", &GetWeaponIdAddr);
+	if(GetWeaponIdAddr == nullptr) {
+		snprintf(error, maxlen, "could not get GetWeaponId address");
+		return false;
+	}
+
 	g_pGameConf->GetMemSig("GetAmmoName", &GetAmmoNameAddr);
+	if(GetAmmoNameAddr == nullptr) {
+		snprintf(error, maxlen, "could not get GetAmmoName address");
+		return false;
+	}
 
 	g_pGameConf->GetMemSig("CTFPlayer::ManageBuilderWeapons", &CTFPlayerManageBuilderWeaponsAddr);
+	if(CTFPlayerManageBuilderWeaponsAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CTFPlayer::ManageBuilderWeapons address");
+		return false;
+	}
+
 	g_pGameConf->GetMemSig("CTFPlayer::CanBuild", &CTFPlayerCanBuildAddr);
+	if(CTFPlayerCanBuildAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CTFPlayer::CanBuild address");
+		return false;
+	}
+
 	g_pGameConf->GetMemSig("CTFPlayer::PrecachePlayerModels", &CTFPlayerPrecachePlayerModelsAddr);
+	if(CTFPlayerPrecachePlayerModelsAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CTFPlayer::PrecachePlayerModels address");
+		return false;
+	}
+
 	g_pGameConf->GetMemSig("CBaseObject::CanBeUpgraded", &CBaseObjectCanBeUpgradedAddr);
+	if(CBaseObjectCanBeUpgradedAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CBaseObject::CanBeUpgraded address");
+		return false;
+	}
+
 	g_pGameConf->GetMemSig("CBaseObject::DoQuickBuild", &CBaseObjectDoQuickBuildAddr);
+	if(CBaseObjectDoQuickBuildAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CBaseObject::DoQuickBuild address");
+		return false;
+	}
 
 	g_pGameConf->GetOffset("CTFPlayer::ManageBuilderWeapons::OBJ_LAST", &CTFPlayerManageBuilderWeaponsOBJ_LAST);
+	if(CTFPlayerManageBuilderWeaponsOBJ_LAST == -1) {
+		snprintf(error, maxlen, "could not get CTFPlayer::ManageBuilderWeapons::OBJ_LAST offset");
+		return false;
+	}
+
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1);
+	if(CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL1 == -1) {
+		snprintf(error, maxlen, "could not get CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::1 offset");
+		return false;
+	}
+
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2);
+	if(CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL2 == -1) {
+		snprintf(error, maxlen, "could not get CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::2 offset");
+		return false;
+	}
+
 	g_pGameConf->GetOffset("CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::3", &CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL3);
+	if(CTFPlayerPrecachePlayerModelsTF_CLASS_COUNT_ALL3 == -1) {
+		snprintf(error, maxlen, "could not get CTFPlayer::PrecachePlayerModels::TF_CLASS_COUNT_ALL::3 offset");
+		return false;
+	}
+
 	g_pGameConf->GetOffset("CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER", &CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER);
+	if(CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER == -1) {
+		snprintf(error, maxlen, "could not get CTFPlayer::CanBuild::OBJ_ATTACHMENT_SAPPER offset");
+		return false;
+	}
 
 	g_pGameConf->GetOffset("CBaseObject::CanBeUpgraded::OBJ_MAX_UPGRADE_LEVEL", &CBaseObjectCanBeUpgradedOBJ_MAX_UPGRADE_LEVEL);
+	if(CBaseObjectCanBeUpgradedOBJ_MAX_UPGRADE_LEVEL == -1) {
+		snprintf(error, maxlen, "could not get CBaseObject::CanBeUpgraded::OBJ_MAX_UPGRADE_LEVEL offset");
+		return false;
+	}
+
 	g_pGameConf->GetOffset("CBaseObject::DoQuickBuild::OBJ_MAX_UPGRADE_LEVEL", &CBaseObjectDoQuickBuildOBJ_MAX_UPGRADE_LEVEL);
+	if(CBaseObjectDoQuickBuildOBJ_MAX_UPGRADE_LEVEL == -1) {
+		snprintf(error, maxlen, "could not get CBaseObject::DoQuickBuild::OBJ_MAX_UPGRADE_LEVEL offset");
+		return false;
+	}
+
+	g_pGameConf->GetOffset("sizeof(CBaseObject)", &sizeofCBaseObject);
+	if(sizeofCBaseObject == -1) {
+		snprintf(error, maxlen, "could not get sizeof(CBaseObject)");
+		return false;
+	}
+
+	g_pGameConf->GetOffset("sizeof(CBaseObjectUpgrade)", &sizeofCBaseObjectUpgrade);
+	if(sizeofCBaseObjectUpgrade == -1) {
+		snprintf(error, maxlen, "could not get sizeof(CBaseObjectUpgrade)");
+		return false;
+	}
+
+	int CBaseObjectGetBaseHealth{-1};
+	g_pGameConf->GetOffset("CBaseObject::GetBaseHealth", &CBaseObjectGetBaseHealth);
+	if(CBaseObjectGetBaseHealth == -1) {
+		snprintf(error, maxlen, "could not get CBaseObject::GetBaseHealth offset");
+		return false;
+	}
+
+	int CBaseEntityPrecache{-1};
+	g_pGameConf->GetOffset("CBaseEntity::Precache", &CBaseEntityPrecache);
+	if(CBaseEntityPrecache == -1) {
+		snprintf(error, maxlen, "could not get CBaseEntity::Precache offset");
+		return false;
+	}
+
+	int CBaseEntitySpawn{-1};
+	g_pGameConf->GetOffset("CBaseEntity::Spawn", &CBaseEntitySpawn);
+	if(CBaseEntitySpawn == -1) {
+		snprintf(error, maxlen, "could not get CBaseEntity::Spawn offset");
+		return false;
+	}
+
+	g_pGameConf->GetOffset("CBaseObject::GetMaxUpgradeLevel", &CBaseObjectGetMaxUpgradeLevelOffset);
+	if(CBaseObjectGetMaxUpgradeLevelOffset == -1) {
+		snprintf(error, maxlen, "could not get CBaseObject::GetMaxUpgradeLevel offset");
+		return false;
+	}
+
+	g_pGameConf->GetOffset("CBaseEntity::IsBaseObject", &CBaseEntityIsBaseObject);
+	if(CBaseEntityIsBaseObject == -1) {
+		snprintf(error, maxlen, "could not get CBaseEntity::IsBaseObject offset");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
+	if(CTFWeaponBuilderSetSubType == nullptr) {
+		snprintf(error, maxlen, "could not get CTFWeaponBuilder::SetSubType address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
+	if(CBaseObjectCTOR == nullptr) {
+		snprintf(error, maxlen, "could not get CBaseObject::CBaseObject address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CBaseObjectUpgrade::CBaseObjectUpgrade", &CBaseObjectUpgradeCTOR);
+	if(CBaseObjectUpgradeCTOR == nullptr) {
+		snprintf(error, maxlen, "could not get CBaseObjectUpgrade::CBaseObjectUpgrade address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CTFWeaponBase::Precache", &CTFWeaponBasePrecache);
+	if(CTFWeaponBasePrecache == nullptr) {
+		snprintf(error, maxlen, "could not get CTFWeaponBase::Precache address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CBaseEntity::PrecacheModel", &CBaseEntityPrecacheModel);
+	if(CBaseEntityPrecacheModel == nullptr) {
+		snprintf(error, maxlen, "could not get CBaseEntity::PrecacheModel address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CTFPlayer::ManageRegularWeaponsLegacy", &CTFPlayerManageRegularWeaponsLegacyAddr);
+	if(CTFPlayerManageRegularWeaponsLegacyAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CTFPlayer::ManageRegularWeaponsLegacy address");
+		return false;
+	}
+
+	g_pGameConf->GetMemSig("CTFPlayer::GetNumObjects", &CTFPlayerGetNumObjectsAddr);
+	if(CTFPlayerGetNumObjectsAddr == nullptr) {
+		snprintf(error, maxlen, "could not get CTFPlayer::GetNumObjects address");
+		return false;
+	}
 
 	SourceHook::SetMemAccess(CTFPlayerManageBuilderWeaponsAddr, CTFPlayerManageBuilderWeaponsOBJ_LAST + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CTFPlayerCanBuildAddr, CTFPlayerCanBuildOBJ_ATTACHMENT_SAPPER + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
@@ -3452,103 +3631,217 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	SourceHook::SetMemAccess(CBaseObjectCanBeUpgradedAddr, CBaseObjectCanBeUpgradedOBJ_MAX_UPGRADE_LEVEL + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 	SourceHook::SetMemAccess(CBaseObjectDoQuickBuildAddr, CBaseObjectDoQuickBuildOBJ_MAX_UPGRADE_LEVEL + 4, SH_MEM_READ|SH_MEM_WRITE|SH_MEM_EXEC);
 
-	g_bOffsetsInited = true;
-
-	UpdateObjectOffsets();
-	UpdateClassOffsets();
-
-	DoClassDataMgrInit();
-	
-	LoadExtraObjects();
-	LoadExtraClasses();
+	CDetourManager::Init(g_pSM->GetScriptingEngine(), g_pGameConf);
 
 	pLoadObjectInfos = DETOUR_CREATE_STATIC(LoadObjectInfos, "LoadObjectInfos")
-	pLoadObjectInfos->EnableDetour();
-	
+	if(!pLoadObjectInfos) {
+		snprintf(error, maxlen, "could not create LoadObjectInfos detour");
+		return false;
+	}
+
 	pGetObjectInfo = DETOUR_CREATE_STATIC(GetObjectInfo, "GetObjectInfo")
-	pGetObjectInfo->EnableDetour();
-	
+	if(!pGetObjectInfo) {
+		snprintf(error, maxlen, "could not create GetObjectInfo detour");
+		return false;
+	}
+
 	pGetBuildableId = DETOUR_CREATE_STATIC(GetBuildableId, "GetBuildableId")
-	pGetBuildableId->EnableDetour();
-	
+	if(!pGetBuildableId) {
+		snprintf(error, maxlen, "could not create GetBuildableId detour");
+		return false;
+	}
+
 	pCTFPlayerClassDataMgrInit = DETOUR_CREATE_MEMBER(CTFPlayerClassDataMgrInit, "CTFPlayerClassDataMgr::Init")
-	pCTFPlayerClassDataMgrInit->EnableDetour();
+	if(!pCTFPlayerClassDataMgrInit) {
+		snprintf(error, maxlen, "could not create CTFPlayerClassDataMgr::Init detour");
+		return false;
+	}
 	
 	pGetPlayerClassData = DETOUR_CREATE_STATIC(GetPlayerClassData, "GetPlayerClassData")
-	pGetPlayerClassData->EnableDetour();
-	
-	pClassCanBuild = DETOUR_CREATE_STATIC(ClassCanBuild, "ClassCanBuild")
-	pClassCanBuild->EnableDetour();
-	
+	if(!pGetPlayerClassData) {
+		snprintf(error, maxlen, "could not create GetPlayerClassData detour");
+		return false;
+	}
+
 	pCTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds = DETOUR_CREATE_MEMBER(CTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds, "CTFPlayerClassDataMgr::AddAdditionalPlayerDeathSounds")
-	pCTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds->EnableDetour();
-	
+	if(!pCTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds) {
+		snprintf(error, maxlen, "could not create CTFPlayerClassDataMgr::AddAdditionalPlayerDeathSounds detour");
+		return false;
+	}
+
+	pClassCanBuild = DETOUR_CREATE_STATIC(ClassCanBuild, "ClassCanBuild")
+	if(!pClassCanBuild) {
+		snprintf(error, maxlen, "could not create ClassCanBuild detour");
+		return false;
+	}
+
 	pCTFWeaponBuilderCanBuildObjectType = DETOUR_CREATE_MEMBER(CTFWeaponBuilderCanBuildObjectType, "CTFWeaponBuilder::CanBuildObjectType")
-	pCTFWeaponBuilderCanBuildObjectType->EnableDetour();
-	
+	if(!pCTFWeaponBuilderCanBuildObjectType) {
+		snprintf(error, maxlen, "could not create CTFWeaponBuilder::CanBuildObjectType detour");
+		return false;
+	}
+
 	pCTFWeaponBuilderSetObjectTypeAsBuildable = DETOUR_CREATE_MEMBER(CTFWeaponBuilderSetObjectTypeAsBuildable, "CTFWeaponBuilder::SetObjectTypeAsBuildable")
-	pCTFWeaponBuilderSetObjectTypeAsBuildable->EnableDetour();
-	
+	if(!pCTFWeaponBuilderSetObjectTypeAsBuildable) {
+		snprintf(error, maxlen, "could not create CTFWeaponBuilder::SetObjectTypeAsBuildable detour");
+		return false;
+	}
+
 	pCTFWeaponBuilderCTOR = DETOUR_CREATE_MEMBER(CTFWeaponBuilderCTOR, "CTFWeaponBuilder::CTFWeaponBuilder")
-	pCTFWeaponBuilderCTOR->EnableDetour();
-	
+	if(!pCTFWeaponBuilderCTOR) {
+		snprintf(error, maxlen, "could not create CTFWeaponBuilder::CTFWeaponBuilder detour");
+		return false;
+	}
+
 	pCTFPlayerClassSharedCanBuildObject = DETOUR_CREATE_MEMBER(CTFPlayerClassSharedCanBuildObject, "CTFPlayerClassShared::CanBuildObject")
-	pCTFPlayerClassSharedCanBuildObject->EnableDetour();
-	
+	if(!pCTFPlayerClassSharedCanBuildObject) {
+		snprintf(error, maxlen, "could not create CTFPlayerClassShared::CanBuildObject detour");
+		return false;
+	}
+
 	pCTFPlayerGetLoadoutItem = DETOUR_CREATE_MEMBER(CTFPlayerGetLoadoutItem, "CTFPlayer::GetLoadoutItem")
-	pCTFPlayerGetLoadoutItem->EnableDetour();
+	if(!pCTFPlayerGetLoadoutItem) {
+		snprintf(error, maxlen, "could not create CTFPlayer::GetLoadoutItem detour");
+		return false;
+	}
 
 	pCTFItemDefinitionGetLoadoutSlot = DETOUR_CREATE_MEMBER(CTFItemDefinitionGetLoadoutSlot, "CTFItemDefinition::GetLoadoutSlot")
-	pCTFItemDefinitionGetLoadoutSlot->EnableDetour();
+	if(!pCTFItemDefinitionGetLoadoutSlot) {
+		snprintf(error, maxlen, "could not create CTFItemDefinition::GetLoadoutSlot detour");
+		return false;
+	}
 
 	pCTFInventoryManagerGetBaseItemForClass = DETOUR_CREATE_MEMBER(CTFInventoryManagerGetBaseItemForClass, "CTFInventoryManager::GetBaseItemForClass")
-	pCTFInventoryManagerGetBaseItemForClass->EnableDetour();
+	if(!pCTFInventoryManagerGetBaseItemForClass) {
+		snprintf(error, maxlen, "could not create CTFInventoryManager::GetBaseItemForClass detour");
+		return false;
+	}
 
 	pCTFPlayerInventoryGetItemInLoadout = DETOUR_CREATE_MEMBER(CTFPlayerInventoryGetItemInLoadout, "CTFPlayerInventory::GetItemInLoadout")
-	pCTFPlayerInventoryGetItemInLoadout->EnableDetour();
+	if(!pCTFPlayerInventoryGetItemInLoadout) {
+		snprintf(error, maxlen, "could not create CTFPlayerInventory::GetItemInLoadout detour");
+		return false;
+	}
 
 	pCEconItemViewGetPlayerDisplayModel = DETOUR_CREATE_MEMBER(CEconItemViewGetPlayerDisplayModel, "CEconItemView::GetPlayerDisplayModel")
-	pCEconItemViewGetPlayerDisplayModel->EnableDetour();
+	if(!pCEconItemViewGetPlayerDisplayModel) {
+		snprintf(error, maxlen, "could not create CEconItemView::GetPlayerDisplayModel detour");
+		return false;
+	}
 
 	pCTFItemDefinitionGetPlayerDisplayModelAlt = DETOUR_CREATE_MEMBER(CTFItemDefinitionGetPlayerDisplayModelAlt, "CTFItemDefinition::GetPlayerDisplayModelAlt")
-	pCTFItemDefinitionGetPlayerDisplayModelAlt->EnableDetour();
+	if(!pCTFItemDefinitionGetPlayerDisplayModelAlt) {
+		snprintf(error, maxlen, "could not create CTFItemDefinition::GetPlayerDisplayModelAlt detour");
+		return false;
+	}
 
 	TranslateWeaponEntForClassDetour = DETOUR_CREATE_STATIC(TranslateWeaponEntForClass, "TranslateWeaponEntForClass")
-	TranslateWeaponEntForClassDetour->EnableDetour();
+	if(!TranslateWeaponEntForClassDetour) {
+		snprintf(error, maxlen, "could not create TranslateWeaponEntForClass detour");
+		return false;
+	}
 
 	pCTFPlayerGetClassEyeHeight = DETOUR_CREATE_MEMBER(CTFPlayerGetClassEyeHeight, "CTFPlayer::GetClassEyeHeight")
-	pCTFPlayerGetClassEyeHeight->EnableDetour();
-	
+	if(!pCTFPlayerGetClassEyeHeight) {
+		snprintf(error, maxlen, "could not create CTFPlayer::GetClassEyeHeight detour");
+		return false;
+	}
+
 	pCTFPlayerManageBuilderWeapons = DETOUR_CREATE_MEMBER(CTFPlayerManageBuilderWeapons, "CTFPlayer::ManageBuilderWeapons")
-	pCTFPlayerManageBuilderWeapons->EnableDetour();
-	
+	if(!pCTFPlayerManageBuilderWeapons) {
+		snprintf(error, maxlen, "could not create CTFPlayer::ManageBuilderWeapons detour");
+		return false;
+	}
+
 	pCBaseObjectCanBeUpgraded = DETOUR_CREATE_MEMBER(CBaseObjectCanBeUpgraded, "CBaseObject::CanBeUpgraded")
-	pCBaseObjectCanBeUpgraded->EnableDetour();
+	if(!pCBaseObjectCanBeUpgraded) {
+		snprintf(error, maxlen, "could not create CBaseObject::CanBeUpgraded detour");
+		return false;
+	}
 
 	pCBaseObjectDoQuickBuild = DETOUR_CREATE_MEMBER(CBaseObjectDoQuickBuild, "CBaseObject::DoQuickBuild")
-	pCBaseObjectDoQuickBuild->EnableDetour();
+	if(!pCBaseObjectDoQuickBuild) {
+		snprintf(error, maxlen, "could not create CBaseObject::DoQuickBuild detour");
+		return false;
+	}
 
 	pCBaseObjectGetMaxUpgradeLevel = DETOUR_CREATE_MEMBER(CBaseObjectGetMaxUpgradeLevel, "CBaseObject::GetMaxUpgradeLevel")
-	pCBaseObjectGetMaxUpgradeLevel->EnableDetour();
-	
+	if(!pCBaseObjectGetMaxUpgradeLevel) {
+		snprintf(error, maxlen, "could not create CBaseObject::GetMaxUpgradeLevel detour");
+		return false;
+	}
+
 	pCTFPlayerCanBuild = DETOUR_CREATE_MEMBER(CTFPlayerCanBuild, "CTFPlayer::CanBuild")
-	pCTFPlayerCanBuild->EnableDetour();
-	
+	if(!pCTFPlayerCanBuild) {
+		snprintf(error, maxlen, "could not create CTFPlayer::CanBuild detour");
+		return false;
+	}
+
 	pCTFPlayerSharedCalculateObjectCost = DETOUR_CREATE_MEMBER(CTFPlayerSharedCalculateObjectCost, "CTFPlayerShared::CalculateObjectCost")
-	pCTFPlayerSharedCalculateObjectCost->EnableDetour();
-	
+	if(!pCTFPlayerSharedCalculateObjectCost) {
+		snprintf(error, maxlen, "could not create CTFPlayerShared::CalculateObjectCost detour");
+		return false;
+	}
+
 	pWriteUsercmd = DETOUR_CREATE_STATIC(WriteUsercmd, "WriteUsercmd")
-	pWriteUsercmd->EnableDetour();
-	
+	if(!pWriteUsercmd) {
+		snprintf(error, maxlen, "could not create WriteUsercmd detour");
+		return false;
+	}
+
 	pReadUsercmd = DETOUR_CREATE_STATIC(ReadUsercmd, "ReadUsercmd")
-	pReadUsercmd->EnableDetour();
-	
+	if(!pReadUsercmd) {
+		snprintf(error, maxlen, "could not create ReadUsercmd detour");
+		return false;
+	}
+
 	pInternalCalculateObjectCost = DETOUR_CREATE_STATIC(InternalCalculateObjectCost, "InternalCalculateObjectCost")
-	pInternalCalculateObjectCost->EnableDetour();
+	if(!pInternalCalculateObjectCost) {
+		snprintf(error, maxlen, "could not create InternalCalculateObjectCost detour");
+		return false;
+	}
 
 	pCTFPlayerManageRegularWeapons = DETOUR_CREATE_MEMBER(CTFPlayerManageRegularWeapons, "CTFPlayer::ManageRegularWeapons")
+	if(!pCTFPlayerManageRegularWeapons) {
+		snprintf(error, maxlen, "could not create CTFPlayer::ManageRegularWeapons detour");
+		return false;
+	}
+
+	pLoadObjectInfos->EnableDetour();
+	pGetObjectInfo->EnableDetour();
+	pGetBuildableId->EnableDetour();
+	pCTFPlayerClassDataMgrInit->EnableDetour();
+	pGetPlayerClassData->EnableDetour();
+	pClassCanBuild->EnableDetour();
+	pCTFPlayerClassDataMgrAddAdditionalPlayerDeathSounds->EnableDetour();
+	pCTFWeaponBuilderCanBuildObjectType->EnableDetour();
+	pCTFWeaponBuilderSetObjectTypeAsBuildable->EnableDetour();
+	pCTFWeaponBuilderCTOR->EnableDetour();
+	pCTFPlayerClassSharedCanBuildObject->EnableDetour();
+	pCTFPlayerGetLoadoutItem->EnableDetour();
+	pCTFItemDefinitionGetLoadoutSlot->EnableDetour();
+	pCTFInventoryManagerGetBaseItemForClass->EnableDetour();
+	pCTFPlayerInventoryGetItemInLoadout->EnableDetour();
+	pCEconItemViewGetPlayerDisplayModel->EnableDetour();
+	pCTFItemDefinitionGetPlayerDisplayModelAlt->EnableDetour();
+	TranslateWeaponEntForClassDetour->EnableDetour();
+	pCTFPlayerGetClassEyeHeight->EnableDetour();
+	pCTFPlayerManageBuilderWeapons->EnableDetour();
+	pCBaseObjectCanBeUpgraded->EnableDetour();
+	pCBaseObjectDoQuickBuild->EnableDetour();
+	pCBaseObjectGetMaxUpgradeLevel->EnableDetour();
+	pCTFPlayerCanBuild->EnableDetour();
+	pCTFPlayerSharedCalculateObjectCost->EnableDetour();
+	pWriteUsercmd->EnableDetour();
+	pReadUsercmd->EnableDetour();
+	pInternalCalculateObjectCost->EnableDetour();
 	pCTFPlayerManageRegularWeapons->EnableDetour();
-	
+
+	SH_MANUALHOOK_RECONFIGURE(GetBaseHealth, CBaseObjectGetBaseHealth, 0, 0);
+	SH_MANUALHOOK_RECONFIGURE(Precache, CBaseEntityPrecache, 0, 0);
+	SH_MANUALHOOK_RECONFIGURE(Spawn, CBaseEntitySpawn, 0, 0);
+	SH_MANUALHOOK_RECONFIGURE(UpdateOnRemove, CBaseEntityUpdateOnRemove, 0, 0);
+
 	sm_sendprop_info_t info{};
 	gamehelpers->FindSendPropInfo("CTFWeaponBuilder", "m_aBuildableObjectTypes", &info);
 	m_aBuildableObjectTypesOffset = info.actual_offset;
@@ -3565,43 +3858,23 @@ bool Sample::SDK_OnLoad(char *error, size_t maxlen, bool late)
 	gamehelpers->FindSendPropInfo("CTFPlayer", "m_iClass", &info);
 	m_iClassOffset = info.actual_offset;
 	m_iClassLocalOffset = m_iClassOffset - m_PlayerClassOffset;
-	
-	g_pGameConf->GetOffset("sizeof(CBaseObject)", &sizeofCBaseObject);
-	g_pGameConf->GetOffset("sizeof(CBaseObjectUpgrade)", &sizeofCBaseObjectUpgrade);
-	
-	int offset = -1;
-	g_pGameConf->GetOffset("CBaseObject::GetBaseHealth", &offset);
-	SH_MANUALHOOK_RECONFIGURE(GetBaseHealth, offset, 0, 0);
 
-	g_pGameConf->GetOffset("CBaseEntity::Precache", &offset);
-	SH_MANUALHOOK_RECONFIGURE(Precache, offset, 0, 0);
+	g_bOffsetsInited = true;
 
-	g_pGameConf->GetOffset("CBaseEntity::Spawn", &offset);
-	SH_MANUALHOOK_RECONFIGURE(Spawn, offset, 0, 0);
+	DoClassDataMgrInit();
 
-	g_pGameConf->GetOffset("CBaseObject::GetMaxUpgradeLevel", &CBaseObjectGetMaxUpgradeLevelOffset);
+	LoadExtraObjects();
+	LoadExtraClasses();
 
-	g_pGameConf->GetOffset("CBaseEntity::IsBaseObject", &CBaseEntityIsBaseObject);
-
-	g_pGameConf->GetMemSig("CTFWeaponBuilder::SetSubType", &CTFWeaponBuilderSetSubType);
-	g_pGameConf->GetMemSig("CBaseObject::CBaseObject", &CBaseObjectCTOR);
-	g_pGameConf->GetMemSig("CBaseObjectUpgrade::CBaseObjectUpgrade", &CBaseObjectUpgradeCTOR);
-	g_pGameConf->GetMemSig("CTFWeaponBase::Precache", &CTFWeaponBasePrecache);
-	g_pGameConf->GetMemSig("CBaseEntity::PrecacheModel", &CBaseEntityPrecacheModel);
-
-	g_pGameConf->GetMemSig("CTFPlayer::ManageRegularWeaponsLegacy", &CTFPlayerManageRegularWeaponsLegacyAddr);
-
-	g_pGameConf->GetMemSig("CTFPlayer::GetNumObjects", &CTFPlayerGetNumObjectsAddr);
-	
 	sharesys->AddNatives(myself, g_sNativesInfo);
-	
+
 	ClassCanBuildObject = forwards->CreateForward("ClassCanBuildObject", ET_Hook, 4, nullptr, Param_Cell, Param_Cell, Param_Cell, Param_CellByRef);
-	
+
 	objinfo_handle = handlesys->CreateType("CObjectInfo", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
 	classdata_handle = handlesys->CreateType("TFPlayerClassData", this, 0, nullptr, nullptr, myself->GetIdentity(), nullptr);
-	
+
 	sharesys->RegisterLibrary(myself, "clsobj_hack");
-	
+
 	return true;
 }
 
