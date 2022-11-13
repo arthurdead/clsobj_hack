@@ -11,7 +11,7 @@ public Plugin myinfo =
 	name = "clsobj_hack",
 	author = "Arthurdead",
 	description = "",
-	version = "0.1.0.1",
+	version = "0.1.0.2",
 	url = ""
 };
 
@@ -473,8 +473,10 @@ static Action ProxyPlayerClass(int iEntity, const char[] cPropName, int &iValue,
 
 public void OnClientPutInServer(int client)
 {
-	proxysend_hook(client, "m_iClass", ProxyPlayerClass, false);
-	proxysend_hook(client, "m_iDesiredPlayerClass", ProxyPlayerClass, false);
+	if(TFPlayerClassData.Count() > view_as<int>(TF_CLASS_CIVILIAN)) {
+		proxysend_hook(client, "m_iClass", ProxyPlayerClass, false);
+		proxysend_hook(client, "m_iDesiredPlayerClass", ProxyPlayerClass, false);
+	}
 
 #if defined DEBUG
 	PrintToServer("OnClientPutInServer %i", client);
@@ -483,9 +485,11 @@ public void OnClientPutInServer(int client)
 
 public void OnEntityCreated(int entity, const char[] classname)
 {
-	if(HasEntProp(entity, Prop_Send, "m_aBuildableObjectTypes")) {
-		SDKHook(entity, SDKHook_SpawnPost, BuilderOnSpawnPost);
-	} else if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
-		SDKHook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
+	if(CObjectInfo.Count() > view_as<int>(OBJ_LAST)) {
+		if(HasEntProp(entity, Prop_Send, "m_aBuildableObjectTypes")) {
+			SDKHook(entity, SDKHook_SpawnPost, BuilderOnSpawnPost);
+		} else if(HasEntProp(entity, Prop_Send, "m_iObjectType")) {
+			SDKHook(entity, SDKHook_SpawnPost, ObjectOnSpawnPost);
+		}
 	}
 }
