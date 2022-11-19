@@ -2221,11 +2221,12 @@ struct builder_vars_t
 	}
 };
 
-std::unordered_map<int, builder_vars_t> buildervarsmap{};
+using buildervarsmap_t = std::unordered_map<int, builder_vars_t>;
+buildervarsmap_t buildervarsmap{};
 
 void RemoveBuilderVars(int index)
 {
-	auto it1 = buildervarsmap.begin();
+	buildervarsmap_t::iterator it1 = buildervarsmap.begin();
 	while(it1 != buildervarsmap.end()) {
 		auto &map1 = it1->second.m_aBuildableObjectTypes;
 		auto it2 = map1.begin();
@@ -2256,7 +2257,7 @@ static cell_t BuilderGetNumBuildables(IPluginContext *pContext, const cell_t *pa
 
 	int ref = gamehelpers->EntityToReference(pEntity);
 	
-	auto it = buildervarsmap.find(ref);
+	buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		ret += it->second.m_aBuildableObjectTypes.size();
 	}
@@ -2276,7 +2277,7 @@ static cell_t BuilderGetBuildableIndex(IPluginContext *pContext, const cell_t *p
 	} else {
 		int ref = gamehelpers->EntityToReference(pEntity);
 
-		auto it = buildervarsmap.find(ref);
+		buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			int idx = params[2]-OBJ_LAST;
 			auto &map = it->second.m_aBuildableObjectTypes;
@@ -2300,7 +2301,7 @@ static cell_t BuilderIndexByRepresentative(IPluginContext *pContext, const cell_
 
 	int ref = gamehelpers->EntityToReference(pEntity);
 	
-	auto it = buildervarsmap.find(ref);
+	buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		auto &map = it->second.m_aBuildableObjectTypes;
 		auto it2 = map.begin();
@@ -2324,7 +2325,7 @@ static cell_t BuilderRepresentativeByIndex(IPluginContext *pContext, const cell_
 
 	int ref = gamehelpers->EntityToReference(pEntity);
 	
-	auto it = buildervarsmap.find(ref);
+	buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 	if(it != buildervarsmap.end()) {
 		auto &map = it->second.m_aBuildableObjectTypes;
 		auto it2 = map.find(params[2]);
@@ -2350,7 +2351,7 @@ static cell_t BuilderIsBuildable(IPluginContext *pContext, const cell_t *params)
 	} else {
 		int ref = gamehelpers->EntityToReference(pEntity);
 
-		auto it = buildervarsmap.find(ref);
+		buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			int idx = params[2]-OBJ_LAST;
 			auto &map = it->second.m_aBuildableObjectTypes;
@@ -2373,7 +2374,7 @@ static cell_t BuilderSetAsBuildable(IPluginContext *pContext, const cell_t *para
 	} else {
 		int ref = gamehelpers->EntityToReference(pEntity);
 
-		auto it = buildervarsmap.find(ref);
+		buildervarsmap_t::iterator it = buildervarsmap.find(ref);
 		if(it != buildervarsmap.end()) {
 			auto &map = it->second.m_aBuildableObjectTypes;
 			auto it2 = map.find(params[2]);
@@ -2721,7 +2722,7 @@ void HookBuilderRemoved()
 
 	int ref = gamehelpers->EntityToReference(pEntity);
 
-	auto it{buildervarsmap.find(ref)};
+	buildervarsmap_t::iterator it{buildervarsmap.find(ref)};
 	if(it != buildervarsmap.end()) {
 		buildervarsmap.erase(it);
 	}
