@@ -34,19 +34,19 @@
 			}
 			"CBaseObject::GetBaseHealth"
 			{
-				"linux" "384"
+				"linux" "387"
 			}
 			"CBaseEntity::Precache"
 			{
-				"linux" "24"
+				"linux" "26"
 			}
 			"CBaseEntity::Spawn"
 			{
-				"linux" "23"
+				"linux" "25"
 			}
 			"CBaseObject::GetMaxUpgradeLevel"
 			{
-				"linux" "385"
+				"linux" "388"
 			}
 			"CBaseObject::CanBeUpgraded::OBJ_MAX_UPGRADE_LEVEL"
 			{
@@ -58,11 +58,11 @@
 			}
 			"CBaseEntity::IsBaseObject"
 			{
-				"linux" "84"
+				"linux" "86"
 			}
 			"CBaseEntity::UpdateOnRemove"
 			{
-				"linux" "109"
+				"linux" "111"
 			}
 		}
 		"Signatures"
